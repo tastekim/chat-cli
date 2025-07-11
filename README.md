@@ -28,7 +28,7 @@ Chat CLI는 실시간 커뮤니케이션을 명령줄로 직접 가져오는 현
 
 ```bash
 # Install globally | 전역 설치
-npm install -g @chat-cli/chat-cli
+npm install -g @tastekim/chat-cli
 
 # Run immediately | 즉시 실행
 chat-cli

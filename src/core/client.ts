@@ -17,6 +17,7 @@ export class WebSocketClient extends EventEmitter {
   private reconnectDelay: number = 1000;
   private isConnected: boolean = false;
   private isReconnecting: boolean = false;
+  private hasConnectedBefore: boolean = false;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private heartbeatTimeout: NodeJS.Timeout | null = null;
@@ -51,7 +52,15 @@ export class WebSocketClient extends EventEmitter {
           this.reconnectAttempts = 0;
           this.isReconnecting = false;
           this.startHeartbeat();
-          this.emit('connected');
+          
+          // 초기 연결인지 재연결인지 구분하여 이벤트 발생
+          if (!this.hasConnectedBefore) {
+            this.hasConnectedBefore = true;
+            this.emit('connected');
+          } else {
+            this.emit('reconnected');
+          }
+          
           resolve();
         });
 
@@ -244,6 +253,21 @@ export class WebSocketClient extends EventEmitter {
       console.error('Failed to send message:', error);
       this.emit('error', new Error('Failed to send message'));
       return false;
+    }
+  }
+
+  sendLeaveMessage(room: string, nickname: string): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify({
+          type: 'leave',
+          room,
+          nickname,
+          timestamp: new Date(),
+        }));
+      } catch (error) {
+        console.error('Failed to send leave message:', error);
+      }
     }
   }
 

@@ -159,8 +159,13 @@ export class ChatInterface {
     });
 
     this.client.on('connected', () => {
-      // 재연결 메시지는 client.ts에서 처리하므로 중복 제거
-      // this.displayMessage('system', 'Reconnected successfully!');
+      // 초기 연결 성공 시만 접속 메시지 표시
+      this.displayMessage('system', `📢 ${this.nickname} joined the ${this.room} room.`);
+    });
+
+    this.client.on('reconnected', () => {
+      // 재연결 시에는 조용히 처리 (메시지 표시하지 않음)
+      // 서버에서 자동으로 재연결 처리하므로 추가 액션 불필요
     });
 
     this.client.on('maxReconnectAttemptsReached', () => {
@@ -1121,11 +1126,20 @@ export class ChatInterface {
     return Math.max(0, totalLines - messageAreaHeight);
   }
 
-  private exit(): void {
+  private async exit(): Promise<void> {
     if (this.isExiting) return;
     this.isExiting = true;
+    
+    // 퇴장 메시지를 서버에 전송
+    if (this.client.isConnectionOpen()) {
+      this.displayMessage('system', `📢 ${this.nickname} is leaving the room.`);
+      this.client.sendLeaveMessage(this.room, this.nickname);
+      // 메시지 전송 후 짧은 지연
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
     this.term.fullscreen(false);
-    this.term.processExit(0);
     this.client.disconnect();
+    this.term.processExit(0);
   }
 }
