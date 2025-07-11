@@ -1,0 +1,50 @@
+{
+  "name": "@tastekim/chat-cli",
+  "version": "1.0.1",
+  "main": "dist/index.js",
+  "bin": {
+    "chat-cli": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["chat", "cli", "terminal", "websocket", "real-time"],
+  "author": "tastekim",
+  "license": "MIT",
+  "description": "A real-time terminal chat client with WebSocket support",
+  "dependencies": {
+    "blessed": "^0.1.81",
+    "chalk": "^5.4.1",
+    "commander": "^14.0.0",
+    "highlight.js": "^11.11.1",
+    "inquirer": "^12.7.0",
+    "marked": "^16.0.0",
+    "open": "^10.1.2",
+    "terminal-image": "^3.1.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.30.1",
+    "@types/blessed": "^0.1.25",
+    "@types/inquirer": "^9.0.8",
+    "@types/jest": "^30.0.0",
+    "@types/marked": "^5.0.2",
+    "@types/node": "^24.0.13",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.36.0",
+    "@typescript-eslint/parser": "^8.36.0",
+    "eslint": "^9.30.1",
+    "globals": "^16.3.0",
+    "jest": "^30.0.4",
+    "prettier": "^3.6.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.36.0"
+  }
+}

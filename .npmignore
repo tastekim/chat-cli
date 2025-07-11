@@ -1,0 +1,14 @@
+src/
+tests/
+test-*.js
+*.test.ts
+*.spec.ts
+.env
+.env.*
+node_modules/
+coverage/
+.nyc_output/
+.cache/
+.DS_Store
+*.log
+manual-test.md
