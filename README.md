@@ -1,6 +1,7 @@
 # 💬 Chat CLI
 
 <div align="center">
+<img src="https://velog.velcdn.com/images/tastekim_/post/be19a41c-83fb-4be5-b4c4-40e42719be37/image.png">
 
 [![npm version](https://badge.fury.io/js/@chat-cli%2Fchat-cli.svg)](https://badge.fury.io/js/@chat-cli%2Fchat-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
