@@ -2,11 +2,12 @@ import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 
 export interface MessageData {
-  type: 'message' | 'system' | 'join' | 'leave';
+  type: 'message' | 'system' | 'join' | 'leave' | 'user_count';
   nickname?: string;
   message: string | Buffer;
   room: string;
   timestamp: Date;
+  data?: any;
 }
 
 export class WebSocketClient extends EventEmitter {
@@ -134,6 +135,9 @@ export class WebSocketClient extends EventEmitter {
         break;
       case 'leave':
         this.emit('system', { message: `${message.nickname} left the room` });
+        break;
+      case 'user_count':
+        this.emit('user_count', message);
         break;
       default:
         console.warn('Unknown message type:', message.type);

@@ -22,6 +22,11 @@ export class ChatInterface {
   private selectedFileIndex: number = -1;
   private imeComposing: string = ''; // IME 입력 중인 문자열
   private scrollOffset: number = 0; // 스크롤 오프셋
+  private lastInputContent: string = ''; // 이전 입력 내용
+  private needsFullRedraw: boolean = true; // 전체 재렌더링 필요 여부
+  private drawTimeout: NodeJS.Timeout | null = null; // 디바운싱용 타이머
+  private userCount: number = 1; // 현재 방 접속 인원 수
+  private hasShownImageFailureMessage: boolean = false; // 이미지 실패 메시지 표시 여부
 
   constructor(nickname: string, room: string) {
     this.nickname = nickname;
@@ -34,7 +39,7 @@ export class ChatInterface {
   private createUI(): void {
     this.term.clear();
     this.term.fullscreen(true);
-    this.term.windowTitle(`Chat CLI - ${this.room} Room`);
+    this.updateWindowTitle();
     this.term.grabInput(true);
 
     this.term.on('key', (name: string, matches: string[], data: { isCharacter: boolean }) => {
@@ -107,12 +112,21 @@ export class ChatInterface {
           this.exitFileSelectionMode();
         }
       }
-      this.draw();
+      
+      // 입력 변경 시에는 입력 영역만 업데이트, 그 외에는 전체 업데이트
+      if (name === 'UP' || name === 'DOWN' || name === 'CTRL_L') {
+        this.needsFullRedraw = true;
+        this.debouncedDraw();
+      } else {
+        this.needsFullRedraw = false;
+        this.debouncedDraw();
+      }
     });
 
     this.term.on('resize', (width: number, height: number) => {
       this.width = width;
       this.height = height;
+      this.needsFullRedraw = true;
       this.draw();
     });
   }
@@ -143,10 +157,20 @@ export class ChatInterface {
           this.displayMessage('user', data.message, data.nickname);
         }
       }
+      // 자신의 메시지는 로컬에서 이미 표시했으므로 서버에서 온 것은 무시
     });
 
     this.client.on('system', (data) => {
       this.displayMessage('system', data.message);
+    });
+
+    this.client.on('user_count', (data) => {
+      if (data.data && typeof data.data.count === 'number') {
+        this.userCount = data.data.count;
+        this.updateWindowTitle();
+        this.needsFullRedraw = true;
+        this.draw();
+      }
     });
 
     this.client.on('error', (error) => {
@@ -170,6 +194,15 @@ export class ChatInterface {
 
     this.client.on('maxReconnectAttemptsReached', () => {
       this.displayMessage('error', 'Maximum reconnection attempts reached. Please restart the application.');
+    });
+
+    this.client.on('user_count', (data) => {
+      if (data.data && typeof data.data.count === 'number') {
+        this.userCount = data.data.count;
+        // 인원 수 변경 시 입력 영역만 업데이트
+        this.needsFullRedraw = false;
+        this.debouncedDraw();
+      }
     });
   }
 
@@ -607,24 +640,60 @@ export class ChatInterface {
     }
 
     try {
-      const dirPath = path.dirname(filePath);
-      const baseName = path.basename(filePath);
       const homeDir = require('os').homedir();
       let resolvedDir;
+      let baseName = '';
       
-      if (filePath.startsWith('~/')) {
-        resolvedDir = path.join(homeDir, dirPath.slice(2));
-      } else if (filePath.startsWith('../')) {
-        // ../의 경우 현재 작업 디렉토리를 기준으로 처리
-        resolvedDir = path.resolve(process.cwd(), dirPath);
-      } else if (filePath.startsWith('./')) {
-        // ./의 경우 현재 작업 디렉토리를 기준으로 처리
-        resolvedDir = path.resolve(process.cwd(), dirPath);
-      } else if (path.isAbsolute(filePath)) {
-        resolvedDir = dirPath;
+      // 경로가 / 로 끝나는 경우 (디렉토리를 의미)
+      if (filePath.endsWith('/')) {
+        baseName = '';
+        if (filePath.startsWith('~/')) {
+          resolvedDir = path.join(homeDir, filePath.slice(2));
+        } else if (filePath.startsWith('../')) {
+          // ../ 의 경우 바로 상위 디렉토리를 의미
+          if (filePath === '../') {
+            resolvedDir = path.resolve(process.cwd(), '..');
+          } else {
+            resolvedDir = path.resolve(process.cwd(), filePath);
+          }
+        } else if (filePath.startsWith('./')) {
+          // ./ 의 경우 현재 디렉토리를 의미
+          if (filePath === './') {
+            resolvedDir = process.cwd();
+          } else {
+            resolvedDir = path.resolve(process.cwd(), filePath);
+          }
+        } else if (path.isAbsolute(filePath)) {
+          resolvedDir = filePath;
+        } else {
+          resolvedDir = path.resolve(process.cwd(), filePath);
+        }
       } else {
-        // 상대 경로인 경우 현재 작업 디렉토리를 기준으로 처리
-        resolvedDir = path.resolve(process.cwd(), dirPath);
+        // 파일명이 포함된 경우
+        const dirPath = path.dirname(filePath);
+        baseName = path.basename(filePath);
+        
+        if (filePath.startsWith('~/')) {
+          resolvedDir = path.join(homeDir, dirPath === '~' ? '' : dirPath.slice(2));
+        } else if (filePath.startsWith('../')) {
+          // ../ 로 시작하는 경우 상위 디렉토리 기준
+          if (dirPath === '..') {
+            resolvedDir = path.resolve(process.cwd(), '..');
+          } else {
+            resolvedDir = path.resolve(process.cwd(), dirPath);
+          }
+        } else if (filePath.startsWith('./')) {
+          // ./ 로 시작하는 경우 현재 디렉토리 기준
+          if (dirPath === '.') {
+            resolvedDir = process.cwd();
+          } else {
+            resolvedDir = path.resolve(process.cwd(), dirPath);
+          }
+        } else if (path.isAbsolute(filePath)) {
+          resolvedDir = dirPath;
+        } else {
+          resolvedDir = path.resolve(process.cwd(), dirPath);
+        }
       }
       
       if (fs.existsSync(resolvedDir)) {
@@ -636,10 +705,13 @@ export class ChatInterface {
                    file.toLowerCase().includes(baseName.toLowerCase());
           })
           .map(file => {
-            if (filePath.startsWith('~/')) {
-              return path.join(dirPath, file);
+            // 원래 경로 형식 유지
+            if (filePath.endsWith('/')) {
+              return filePath + file;
+            } else if (filePath.startsWith('~/')) {
+              return path.join(path.dirname(filePath), file);
             } else {
-              return path.join(dirPath, file);
+              return path.join(path.dirname(filePath), file);
             }
           });
         
@@ -837,34 +909,70 @@ export class ChatInterface {
         // 터미널에서 이미지 표시 활성화 (논블로킹)
         setTimeout(async () => {
           try {
+            // terminal-image 사용 가능성 확인
+            if (!terminalImage || typeof terminalImage.buffer !== 'function') {
+              throw new Error('terminal-image not properly loaded');
+            }
+            
+            console.debug('Processing image with terminal-image, size:', content.length);
             const imageString = await terminalImage.buffer(content, { 
               width: Math.min(this.width - 4, 80),
               height: Math.min(this.height - 10, 30)
             });
+            console.debug('Image processing result type:', typeof imageString, 'length:', imageString?.length);
+            
+            // 결과 유효성 검사 - 바이너리 데이터가 텍스트로 출력되는 것 방지
+            if (!imageString || typeof imageString !== 'string' || imageString.includes('\x00')) {
+              throw new Error(`Invalid image output - type: ${typeof imageString}, contains null: ${imageString?.includes('\x00')}`);
+            }
+            
             const formattedImage = this.messageFormatter.format(type, imageString, nickname);
             this.history.push(formattedImage);
             // 이미지 추가 후 강제로 최하단 스크롤
             this.scrollToBottom();
+            this.needsFullRedraw = true;
             this.draw();
           } catch (imageError) {
-            // 이미지 표시 실패 시 정보만 표시
-            const imageInfo = `📷 Image received (${content.length} bytes)`;
+            // 이미지 표시 실패 시 개선된 대안 표시
+            const imageType = this.getImageTypeString(content);
+            const fileSize = this.formatFileSize(content.length);
+            const imageInfo = `📷 ${imageType} Image received (${fileSize})`;
             const formattedImage = this.messageFormatter.format('system', imageInfo, nickname);
             this.history.push(formattedImage);
+            
+            // 첫 번째 이미지 실패 시에만 안내 메시지 표시
+            if (!this.hasShownImageFailureMessage) {
+              this.hasShownImageFailureMessage = true;
+              const helpMessage = this.messageFormatter.format('system', 
+                '💡 Images appear as text? Install required dependencies with: npm install -g @sindresorhus/is sharp', 
+                undefined
+              );
+              this.history.push(helpMessage);
+            }
+            
             this.scrollToBottom();
+            this.needsFullRedraw = true;
             this.draw();
           }
         }, 0);
       } catch (error) {
         console.error('Error displaying image:', error);
-        // 이미지 표시 실패 시 파일 정보 표시
-        const imageInfo = `📷 Image (${content.length} bytes)`;
+        // 이미지 표시 실패 시 개선된 파일 정보 표시
+        const imageType = this.getImageTypeString(content);
+        const fileSize = this.formatFileSize(content.length);
+        const imageInfo = `📷 ${imageType} Image (${fileSize})`;
         const fallbackMessage = this.messageFormatter.format('system', imageInfo, nickname);
         this.history.push(fallbackMessage);
         
-        // 상세 에러 메시지도 표시
-        const errorMessage = this.messageFormatter.format('error', `Failed to display image: ${error instanceof Error ? error.message : 'Unknown error'}`, undefined);
-        this.history.push(errorMessage);
+        // 첫 번째 이미지 실패 시에만 상세 안내 표시
+        if (!this.hasShownImageFailureMessage) {
+          this.hasShownImageFailureMessage = true;
+          const helpMessage = this.messageFormatter.format('system', 
+            '💡 To view images in terminal, install: npm install -g sharp @sindresorhus/is', 
+            undefined
+          );
+          this.history.push(helpMessage);
+        }
       }
     } else if (typeof content === 'string') {
       const formattedMessage = this.messageFormatter.format(type, content, nickname);
@@ -878,6 +986,7 @@ export class ChatInterface {
     
     // 새 메시지 추가 후 최하단 스크롤
     this.scrollToBottom();
+    this.needsFullRedraw = true; // 메시지 추가 시 전체 재렌더링 필요
     this.draw();
   }
 
@@ -908,10 +1017,63 @@ export class ChatInterface {
     return false;
   }
 
+  private getImageTypeString(buffer: Buffer): string {
+    const header = buffer.slice(0, 8);
+    
+    // PNG
+    if (header.indexOf(Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) === 0) {
+      return 'PNG';
+    }
+    
+    // JPEG
+    if (header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF) {
+      return 'JPEG';
+    }
+    
+    // GIF
+    if (header.indexOf(Buffer.from('GIF87a')) === 0 || header.indexOf(Buffer.from('GIF89a')) === 0) {
+      return 'GIF';
+    }
+    
+    // WebP
+    if (header.indexOf(Buffer.from('RIFF')) === 0 && buffer.slice(8, 12).indexOf(Buffer.from('WEBP')) === 0) {
+      return 'WebP';
+    }
+    
+    return 'Unknown';
+  }
+
+  private updateWindowTitle(): void {
+    const userCountText = this.userCount > 1 ? ` (${this.userCount} users)` : ' (1 user)';
+    this.term.windowTitle(`Chat CLI - ${this.room} Room${userCountText}`);
+  }
+
+  private debouncedDraw(): void {
+    if (this.drawTimeout) {
+      clearTimeout(this.drawTimeout);
+    }
+    
+    this.drawTimeout = setTimeout(() => {
+      this.draw();
+    }, 16); // 60fps로 제한
+  }
+
   private draw(): void {
     if (this.isExiting || !this.width) return;
     this.term.hideCursor();
-    this.term.clear();
+    
+    // 전체 재렌더링이 필요한 경우만 화면 지우기
+    if (this.needsFullRedraw) {
+      this.term.clear();
+      this.drawFullUI();
+      this.needsFullRedraw = false;
+    } else {
+      // 입력 영역만 업데이트
+      this.drawInputAreaOnly();
+    }
+  }
+
+  private drawFullUI(): void {
 
     const inputLines = this.currentInput.split('\n');
     const inputHeight = Math.max(1, inputLines.length);
@@ -922,13 +1084,38 @@ export class ChatInterface {
     // 메시지 영역 테두리
     this.term.brightBlack();
     this.term.moveTo(1, 1)('┌' + '─'.repeat(this.width - 2) + '┐');
+    
+    // 헤더에 방 이름과 사용자 수 표시
+    const headerText = `📍 ${this.room} Room`;
+    const userCountText = `👥 ${this.userCount} user${this.userCount > 1 ? 's' : ''}`;
+    const headerLength = headerText.length + userCountText.length + 3; // 공백 포함
+    
+    if (headerLength <= this.width - 4) {
+      const spacer = ' '.repeat(this.width - 4 - headerLength);
+      this.term.moveTo(2, 1);
+      this.term.cyan()(headerText);
+      this.term.moveTo(2 + headerText.length, 1)(spacer);
+      this.term.green()(userCountText);
+    } else {
+      // 공간이 부족한 경우 간단하게 표시
+      const simpleHeader = `${this.room} (${this.userCount})`;
+      this.term.moveTo(2, 1);
+      this.term.cyan()(simpleHeader.slice(0, this.width - 4));
+    }
+    
     for (let y = 2; y < messageBoxHeight; y++) {
       this.term.moveTo(1, y)('│');
       this.term.moveTo(this.width, y)('│');
     }
     this.term.moveTo(1, messageBoxHeight)('└' + '─'.repeat(this.width - 2) + '┘');
 
-    const messageAreaHeight = messageBoxHeight - 2;
+    this.drawMessageArea(messageBoxHeight);
+    this.drawInputArea();
+  }
+
+  private drawMessageArea(messageBoxHeight: number): void {
+
+    const messageAreaHeight = messageBoxHeight - 3; // 헤더 고려하여 -3
     const messageWidth = this.width - 4; // 좌우 패딩 고려
     
     // 모든 메시지의 줄 수 계산 (이미지 줄 수 정확히 계산)
@@ -959,8 +1146,8 @@ export class ChatInterface {
       totalLines += wrappedLines.length;
     }
     
-    // 스크롤 계산 - 스크롤 오프셋 적용
-    let currentY = 2;
+    // 스크롤 계산 - 스크롤 오프셋 적용 (헤더 아래부터 시작)
+    let currentY = 3;
     let displayedLines = 0;
     let startMessageIndex = 0;
     
@@ -1017,7 +1204,7 @@ export class ChatInterface {
       }
     }
     
-    // 메시지 표시
+    // 메시지 표시 (헤더 아래부터 시작)
     for (let i = startMessageIndex; i < this.history.length; i++) {
       const lines = messageLines[i];
       for (const line of lines) {
@@ -1031,6 +1218,14 @@ export class ChatInterface {
         }
       }
     }
+  }
+
+  private drawInputArea(): void {
+    const inputLines = this.currentInput.split('\n');
+    const inputHeight = Math.max(1, inputLines.length);
+    const inputBoxHeight = inputHeight + 2;
+    const hintAreaHeight = 3;
+    const messageBoxHeight = this.height - inputBoxHeight - hintAreaHeight;
 
     // 입력 영역 위치 조정 - 메시지 영역과 공백 추가
     const inputY = messageBoxHeight + 1;
@@ -1092,6 +1287,79 @@ export class ChatInterface {
     this.term.moveTo(cursorX, cursorY);
     this.term.hideCursor(false);
     this.term.styleReset();
+    
+    // 입력 내용 변경 추적
+    this.lastInputContent = this.currentInput;
+  }
+
+  private drawInputAreaOnly(): void {
+    // 입력 내용이 변경되지 않았으면 업데이트하지 않음
+    if (this.lastInputContent === this.currentInput && !this.fileSelectionMode) {
+      return;
+    }
+
+    const inputLines = this.currentInput.split('\n');
+    const inputHeight = Math.max(1, inputLines.length);
+    const inputBoxHeight = inputHeight + 2;
+    const hintAreaHeight = 3;
+    const messageBoxHeight = this.height - inputBoxHeight - hintAreaHeight;
+    const inputY = messageBoxHeight + 1;
+    const hintY = inputY + inputHeight + 2;
+
+    // 입력 영역 지우기 (이전 내용 제거)
+    for (let i = 0; i < inputHeight; i++) {
+      this.term.moveTo(2, inputY + 1 + i);
+      this.term(' '.repeat(this.width - 4));
+    }
+
+    // 힌트 영역 지우기
+    for (let i = 0; i < hintAreaHeight - 2; i++) {
+      this.term.moveTo(2, hintY + 1 + i);
+      this.term(' '.repeat(this.width - 4));
+    }
+
+    let cursorX = 2;
+    let cursorY = inputY + 1;
+    
+    // 입력 힌트 및 상태 표시
+    if (this.currentInput.length === 0) {
+      this.term.gray();
+      this.term.moveTo(2, inputY + 1)('Type a message... (@filepath for files, /help for commands)');
+      this.term.white();
+    } else {
+      inputLines.forEach((line, index) => {
+        this.term.moveTo(2, inputY + 1 + index)(line);
+        if (index === inputLines.length - 1) {
+          cursorX += line.length;
+          cursorY += index;
+        }
+      });
+    }
+    
+    // 파일 첨부 감지 및 실시간 피드백
+    if (this.currentInput.startsWith('@')) {
+      this.showFileAttachmentStatus(hintY + 1);
+    } else if (this.currentInput.startsWith('/')) {
+      this.showCommandStatus(hintY + 1);
+    } else {
+      // 기본 힌트 표시
+      this.term.gray();
+      this.term.moveTo(2, hintY + 1)('💡 Tip: Use @ for files, / for commands, Ctrl+H for help');
+    }
+
+    // IME 입력 중인 문자를 힌트 영역 하단에 표시
+    if (this.imeComposing) {
+      this.term.gray();
+      this.term.moveTo(2, hintY + 2)(`IME: ${this.imeComposing}`);
+      this.term.styleReset();
+    }
+
+    this.term.moveTo(cursorX, cursorY);
+    this.term.hideCursor(false);
+    this.term.styleReset();
+    
+    // 입력 내용 변경 추적
+    this.lastInputContent = this.currentInput;
   }
 
   private scrollToBottom(): void {
@@ -1102,12 +1370,14 @@ export class ChatInterface {
   private scrollUp(): void {
     // 위로 스크롤
     this.scrollOffset = Math.max(0, this.scrollOffset - 5);
+    this.needsFullRedraw = true;
     this.draw();
   }
 
   private scrollDown(): void {
     // 아래로 스크롤 (최하단까지만)
     this.scrollOffset = Math.min(this.scrollOffset + 5, this.getMaxScrollOffset());
+    this.needsFullRedraw = true;
     this.draw();
   }
 
@@ -1142,4 +1412,5 @@ export class ChatInterface {
     this.client.disconnect();
     this.term.processExit(0);
   }
+
 }
