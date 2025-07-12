@@ -7,12 +7,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
 
-<iframe
-  title='disquiet-badge'
-  frameBorder="0"
-  src='https://badge.disquiet.io/vote-badge?productUrlSlug=chat-cli&mode=dark'
-/>
-
 **A Chat CLI that lets you communicate with developers from all over the world while you're at work, naturally and unobtrusively.**
 
 *터미널로 업무중에도 눈치 안보고 자연스럽게 세상 모든 개발자와 소통할 수 있는 채팅 CLI*
