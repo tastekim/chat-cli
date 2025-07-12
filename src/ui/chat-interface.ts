@@ -910,11 +910,14 @@ export class ChatInterface {
         setTimeout(async () => {
           try {
             // terminal-image 사용 가능성 확인
-            if (!terminalImage || typeof terminalImage.buffer !== 'function') {
-              throw new Error('terminal-image not properly loaded');
+            if (!terminalImage) {
+              throw new Error('terminal-image module not loaded');
+            }
+            if (typeof terminalImage.buffer !== 'function') {
+              throw new Error('terminal-image.buffer is not a function, type: ' + typeof terminalImage.buffer);
             }
             
-            console.debug('Processing image with terminal-image, size:', content.length);
+            console.debug('Processing image with terminal-image, size:', content.length, 'terminal type:', process.env.TERM);
             const imageString = await terminalImage.buffer(content, { 
               width: Math.min(this.width - 4, 80),
               height: Math.min(this.height - 10, 30)
@@ -943,8 +946,9 @@ export class ChatInterface {
             // 첫 번째 이미지 실패 시에만 안내 메시지 표시
             if (!this.hasShownImageFailureMessage) {
               this.hasShownImageFailureMessage = true;
+              console.error('Image display failed:', imageError);
               const helpMessage = this.messageFormatter.format('system', 
-                '💡 Images appear as text? Install required dependencies with: npm install -g @sindresorhus/is sharp', 
+                '💡 Images appear as text? This may be due to terminal compatibility. Try iTerm2 or update your terminal.', 
                 undefined
               );
               this.history.push(helpMessage);
@@ -968,7 +972,7 @@ export class ChatInterface {
         if (!this.hasShownImageFailureMessage) {
           this.hasShownImageFailureMessage = true;
           const helpMessage = this.messageFormatter.format('system', 
-            '💡 To view images in terminal, install: npm install -g sharp @sindresorhus/is', 
+            '💡 Image display failed. Try using iTerm2 or updating your terminal. Error: ' + (error instanceof Error ? error.message : 'Unknown'), 
             undefined
           );
           this.history.push(helpMessage);
