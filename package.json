@@ -1,6 +1,6 @@
 {
   "name": "@tastekim/chat-cli",
-  "version": "1.0.7",
+  "version": "1.1.0",
   "main": "dist/index.js",
   "bin": {
     "chat-cli": "dist/index.js"
@@ -8,11 +8,15 @@
   "scripts": {
     "build": "tsc",
     "dev": "ts-node src/index.ts",
+    "dev:debug": "DEBUG=true NODE_ENV=development ts-node src/index.ts",
     "start": "node dist/index.js",
+    "start:debug": "DEBUG=true NODE_ENV=development node dist/index.js",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write src/**/*.ts",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "build:linux": "npm run build && npm run package:linux",
+    "package:linux": "mkdir -p deployment && cp -r dist package.json package-lock.json deployment/ && tar -czf chat-cli-linux.tar.gz -C deployment ."
   },
   "keywords": ["chat", "cli", "terminal", "websocket", "real-time"],
   "author": {

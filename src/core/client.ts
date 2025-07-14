@@ -23,9 +23,28 @@ export class WebSocketClient extends EventEmitter {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private heartbeatTimeout: NodeJS.Timeout | null = null;
 
+  private debugLog(message: string, ...args: any[]) {
+    if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+      const logMessage = `[${new Date().toISOString()}] ${message}`;
+      console.log(logMessage, ...args);
+      try {
+        require('fs').appendFileSync('/tmp/chat-debug.log', logMessage + ' ' + args.map(a => JSON.stringify(a)).join(' ') + '\n');
+      } catch (e) {
+        // 파일 쓰기 실패해도 무시
+      }
+    }
+  }
+
   constructor(serverUrl: string = 'ws://34.64.54.24:8080/api/v1/ws') {
     super();
     this.serverUrl = serverUrl;
+    
+    // 디버깅 모드 활성화
+    if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+      console.log('🔍 Debug mode enabled');
+      // 로그 파일에 기록
+      require('fs').appendFileSync('/tmp/chat-debug.log', `[${new Date().toISOString()}] Debug mode enabled\n`);
+    }
   }
 
   async connect(): Promise<void> {
@@ -38,6 +57,10 @@ export class WebSocketClient extends EventEmitter {
 
         this.cleanupConnection();
         this.ws = new WebSocket(this.serverUrl);
+
+        if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+          console.log('🔧 WebSocket created, setting up event listeners...');
+        }
 
         const connectTimeout = setTimeout(() => {
           if (this.ws) {
@@ -54,6 +77,10 @@ export class WebSocketClient extends EventEmitter {
           this.isReconnecting = false;
           this.startHeartbeat();
           
+          if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+            console.log('🔗 WebSocket connected to:', this.serverUrl);
+          }
+          
           // 초기 연결인지 재연결인지 구분하여 이벤트 발생
           if (!this.hasConnectedBefore) {
             this.hasConnectedBefore = true;
@@ -67,7 +94,17 @@ export class WebSocketClient extends EventEmitter {
 
         this.ws.on('message', (data: WebSocket.Data) => {
           try {
+            if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+              console.log('📨 WebSocket message event triggered');
+              console.log('📨 Raw data type:', typeof data);
+              console.log('📨 Raw data length:', data.toString().length);
+              console.log('📨 Raw message received:', data.toString());
+            }
+            
             if (data.toString() === 'pong') {
+              if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+                console.log('🏓 Received pong response');
+              }
               // Heartbeat response
               if (this.heartbeatTimeout) {
                 clearTimeout(this.heartbeatTimeout);
@@ -75,20 +112,55 @@ export class WebSocketClient extends EventEmitter {
               return;
             }
 
-            if (Buffer.isBuffer(data)) {
-              // 이미지 버퍼 유효성 검사
+            // 먼저 문자열로 변환해서 JSON인지 확인
+            const messageStr = data.toString();
+            
+            // JSON 메시지인지 확인 (중괄호로 시작하는지)
+            if (messageStr.trim().startsWith('{')) {
+              if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+                console.log('📝 Processing JSON text message...');
+              }
+              
+              try {
+                const message = JSON.parse(messageStr);
+                
+                if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+                  console.log('📨 Successfully parsed JSON message:', message);
+                  console.log('📨 Message type:', message.type);
+                  console.log('📨 Message nickname:', message.nickname);
+                  console.log('📨 Message content:', message.message);
+                }
+                
+                this.handleMessage(message);
+              } catch (parseError) {
+                console.error('❌ Failed to parse JSON message:', parseError);
+                console.error('❌ Message content:', messageStr);
+              }
+            } else if (Buffer.isBuffer(data) && !messageStr.trim().startsWith('{')) {
+              // 실제 바이너리 데이터 (이미지 등)
+              if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+                console.log('📦 Received binary data, size:', data.length);
+              }
+              
               if (this.isValidImageBuffer(data)) {
                 this.handleMessage({ type: 'message', message: data, room: '', timestamp: new Date() });
               } else {
-                // 유효하지 않은 이미지 버퍼는 무시 (로그만 남기고 사용자에게 표시하지 않음)
-                // console.warn('Received invalid image buffer, ignoring');
+                if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+                  console.warn('⚠️ Invalid image buffer received, ignoring');
+                }
               }
             } else {
-              const message = JSON.parse(data.toString());
-              this.handleMessage(message);
+              // 알 수 없는 메시지 형식
+              if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+                console.warn('⚠️ Unknown message format:', messageStr);
+              }
             }
           } catch (error) {
-            console.error('Failed to parse message:', error);
+            console.error('❌ Failed to parse message:', error);
+            console.error('❌ Raw data:', data.toString());
+            if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+              console.error('❌ Error stack:', error);
+            }
             this.emit('error', new Error('Failed to parse message'));
           }
         });
@@ -109,6 +181,11 @@ export class WebSocketClient extends EventEmitter {
           clearTimeout(connectTimeout);
           this.isConnected = false;
           this.stopHeartbeat();
+          
+          if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+            console.error('🚨 WebSocket error:', error);
+          }
+          
           this.emit('error', error);
           
           // 연결 시도 중 에러가 발생한 경우
@@ -123,24 +200,43 @@ export class WebSocketClient extends EventEmitter {
   }
 
   private handleMessage(message: MessageData): void {
+    if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+      console.log('🔄 Handling message type:', message.type, message);
+    }
+    
     switch (message.type) {
       case 'message':
+        if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+          console.log('💬 Emitting message event:', message);
+        }
         this.emit('message', message);
         break;
       case 'system':
+        if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+          console.log('🔧 Emitting system event:', message);
+        }
         this.emit('system', message);
         break;
       case 'join':
-        this.emit('system', { message: `${message.nickname} joined the room` });
+        if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+          console.log('👋 User joined:', message.nickname);
+        }
+        this.emit('system', { message: `${message.nickname} joined the room`, isJoinMessage: true, nickname: message.nickname });
         break;
       case 'leave':
-        this.emit('system', { message: `${message.nickname} left the room` });
+        if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+          console.log('👋 User left:', message.nickname);
+        }
+        this.emit('system', { message: `${message.nickname} left the room`, isLeaveMessage: true, nickname: message.nickname });
         break;
       case 'user_count':
+        if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+          console.log('👥 User count update:', message.data);
+        }
         this.emit('user_count', message);
         break;
       default:
-        console.warn('Unknown message type:', message.type);
+        console.warn('⚠️ Unknown message type:', message.type, message);
     }
   }
 
@@ -212,12 +308,18 @@ export class WebSocketClient extends EventEmitter {
   joinRoom(room: string, nickname: string): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
-        this.ws.send(JSON.stringify({
+        const joinMessage = {
           type: 'join',
           room,
           nickname,
           timestamp: new Date(),
-        }));
+        };
+        
+        if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+          console.log('📤 Sending join message:', joinMessage);
+        }
+        
+        this.ws.send(JSON.stringify(joinMessage));
       } catch (error) {
         console.error('Failed to send join message:', error);
         this.emit('error', new Error('Failed to join room'));
@@ -233,28 +335,64 @@ export class WebSocketClient extends EventEmitter {
     url.searchParams.set('room', room);
     
     this.serverUrl = url.toString();
+    
+    if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+      console.log('🔗 Connecting to:', this.serverUrl);
+      console.log('👤 Nickname:', nickname, 'Room:', room);
+    }
+    
     return this.connect();
   }
 
   sendMessage(message: string | Buffer): boolean {
+    if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+      console.log('🚀 sendMessage called with:', typeof message === 'string' ? `"${message}"` : `Buffer(${message.length} bytes)`);
+      console.log('🔌 WebSocket state:', this.ws?.readyState, 'isConnected:', this.isConnected);
+    }
+    
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+        console.error('❌ Cannot send message - WebSocket not ready');
+        console.log('   WebSocket exists:', !!this.ws);
+        console.log('   WebSocket state:', this.ws?.readyState);
+        console.log('   Expected state (OPEN):', 1);
+      }
       this.emit('error', new Error('Connection not available'));
       return false;
     }
 
     try {
       if (Buffer.isBuffer(message)) {
+        if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+          console.log('📤 Sending image buffer, size:', message.length);
+        }
         this.ws.send(message);
       } else {
-        this.ws.send(JSON.stringify({
+        const msgObj = {
           type: 'message',
           message,
           timestamp: new Date(),
-        }));
+        };
+        
+        const jsonString = JSON.stringify(msgObj);
+        
+        if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+          console.log('📤 Sending text message object:', msgObj);
+          console.log('📤 JSON string being sent:', jsonString);
+        }
+        
+        this.ws.send(jsonString);
+        
+        if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+          console.log('✅ Message sent successfully');
+        }
       }
       return true;
     } catch (error) {
-      console.error('Failed to send message:', error);
+      console.error('❌ Failed to send message:', error);
+      if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+        console.error('   Error details:', error);
+      }
       this.emit('error', new Error('Failed to send message'));
       return false;
     }

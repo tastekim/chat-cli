@@ -25,8 +25,10 @@ export class ChatInterface {
   private lastInputContent: string = ''; // 이전 입력 내용
   private needsFullRedraw: boolean = true; // 전체 재렌더링 필요 여부
   private drawTimeout: NodeJS.Timeout | null = null; // 디바운싱용 타이머
-  private userCount: number = 1; // 현재 방 접속 인원 수
+  private userCount: number = 0; // 현재 방 접속 인원 수
   private hasShownImageFailureMessage: boolean = false; // 이미지 실패 메시지 표시 여부
+  private hasShownInitialJoinMessage: boolean = false; // 초기 접속 메시지 표시 여부
+  private connectedUsers: Set<string> = new Set(); // 연결된 사용자 목록
 
   constructor(nickname: string, room: string) {
     this.nickname = nickname;
@@ -149,18 +151,58 @@ export class ChatInterface {
   }
 
   private setupClientEventHandlers(): void {
+    if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+      console.log('🔗 Setting up client event handlers');
+    }
+    
     this.client.on('message', (data) => {
-      if (data.nickname !== this.nickname) {
-        if (Buffer.isBuffer(data.message)) {
-          this.displayMessage('image', data.message, data.nickname);
-        } else {
-          this.displayMessage('user', data.message, data.nickname);
-        }
+      if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+        console.log('📨 Message event received:', data);
       }
-      // 자신의 메시지는 로컬에서 이미 표시했으므로 서버에서 온 것은 무시
+      
+      if (Buffer.isBuffer(data.message)) {
+        this.displayMessage('image', data.message, data.nickname);
+      } else {
+        const messageType = data.nickname === this.nickname ? 'own' : 'user';
+        this.displayMessage(messageType, data.message, data.nickname);
+      }
     });
 
     this.client.on('system', (data) => {
+      // Join 메시지 처리
+      if (data.isJoinMessage) {
+        const userName = data.nickname || '';
+        
+        if (userName === this.nickname) {
+          // 자신의 join 메시지는 초기 접속 시에만 표시
+          if (!this.hasShownInitialJoinMessage) {
+            this.hasShownInitialJoinMessage = true;
+            this.connectedUsers.add(userName);
+            this.displayMessage('system', data.message);
+          }
+          return;
+        } else {
+          // 다른 사용자의 join 메시지는 새로운 연결일 때만 표시
+          if (!this.connectedUsers.has(userName)) {
+            this.connectedUsers.add(userName);
+            this.displayMessage('system', data.message);
+          }
+          // 이미 연결된 사용자의 재연결은 표시하지 않음
+          return;
+        }
+      }
+      
+      // Leave 메시지 처리
+      if (data.isLeaveMessage) {
+        const userName = data.nickname || '';
+        if (this.connectedUsers.has(userName)) {
+          this.connectedUsers.delete(userName);
+          this.displayMessage('system', data.message);
+        }
+        return;
+      }
+      
+      // 일반 시스템 메시지는 그대로 표시
       this.displayMessage('system', data.message);
     });
 
@@ -183,8 +225,9 @@ export class ChatInterface {
     });
 
     this.client.on('connected', () => {
-      // 초기 연결 성공 시만 접속 메시지 표시
-      this.displayMessage('system', `📢 ${this.nickname} joined the ${this.room} room.`);
+      // 서버에서 join 메시지를 보내므로 클라이언트에서는 별도 메시지 표시하지 않음
+      // 초기 연결임을 표시만 함
+      this.hasShownInitialJoinMessage = false; // 서버 메시지를 기다림
     });
 
     this.client.on('reconnected', () => {
@@ -195,20 +238,16 @@ export class ChatInterface {
     this.client.on('maxReconnectAttemptsReached', () => {
       this.displayMessage('error', 'Maximum reconnection attempts reached. Please restart the application.');
     });
-
-    this.client.on('user_count', (data) => {
-      if (data.data && typeof data.data.count === 'number') {
-        this.userCount = data.data.count;
-        // 인원 수 변경 시 입력 영역만 업데이트
-        this.needsFullRedraw = false;
-        this.debouncedDraw();
-      }
-    });
   }
 
   private sendMessage(message: string): void {
     const trimmedMessage = message.trim();
     if (!trimmedMessage) return;
+
+    if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+      console.log('💭 Attempting to send message:', `"${trimmedMessage}"`);
+      console.log('🔌 Connection status:', this.client.isConnectionOpen());
+    }
 
     if (!this.client.isConnectionOpen()) {
       this.displayMessage('error', 'Connection not available. Please wait for reconnection.');
@@ -216,12 +255,27 @@ export class ChatInterface {
     }
 
     if (trimmedMessage.startsWith('/')) {
+      if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+        console.log('⚡ Processing command:', trimmedMessage);
+      }
       this.handleCommand(trimmedMessage);
     } else if (trimmedMessage.startsWith('@')) {
+      if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+        console.log('📎 Processing file:', trimmedMessage.substring(1));
+      }
       this.sendFile(trimmedMessage.substring(1));
     } else {
-      this.displayMessage('own', trimmedMessage, this.nickname);
-      if (!this.client.sendMessage(trimmedMessage)) {
+      if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+        console.log('💬 Sending regular message via client.sendMessage()');
+      }
+      
+      const success = this.client.sendMessage(trimmedMessage);
+      
+      if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+        console.log('📤 sendMessage result:', success);
+      }
+      
+      if (!success) {
         this.displayMessage('error', 'Failed to send message');
       }
     }
@@ -399,7 +453,6 @@ export class ChatInterface {
       }
       
       this.displayMessage('system', '📡 Sending file...');
-      this.displayMessage('image', buffer, this.nickname);
       
       if (!this.client.sendMessage(buffer)) {
         this.displayMessage('error', '❌ Failed to send file');
@@ -1048,7 +1101,7 @@ export class ChatInterface {
   }
 
   private updateWindowTitle(): void {
-    const userCountText = this.userCount > 1 ? ` (${this.userCount} users)` : ' (1 user)';
+    const userCountText = this.userCount > 0 ? ` (${this.userCount} user${this.userCount > 1 ? 's' : ''})` : '';
     this.term.windowTitle(`Chat CLI - ${this.room} Room${userCountText}`);
   }
 
