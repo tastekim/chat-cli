@@ -28,7 +28,10 @@ export class ChatInterface {
   private userCount: number = 0; // 현재 방 접속 인원 수
   private hasShownImageFailureMessage: boolean = false; // 이미지 실패 메시지 표시 여부
   private hasShownInitialJoinMessage: boolean = false; // 초기 접속 메시지 표시 여부
+  private hasShownWelcomeMessage: boolean = false; // welcome 메시지 표시 여부
   private connectedUsers: Set<string> = new Set(); // 연결된 사용자 목록
+  private userList: string[] = []; // 현재 방의 사용자 목록 (사이드바 표시용)
+  private readonly SIDEBAR_WIDTH = 20; // 우측 사이드바 너비
 
   constructor(nickname: string, room: string) {
     this.nickname = nickname;
@@ -44,12 +47,31 @@ export class ChatInterface {
     this.updateWindowTitle();
     this.term.grabInput(true);
 
+    // raw input 처리 추가
+    this.term.on('terminal', (name: string, data: any) => {
+      if (process.env.DEBUG === 'true') {
+        console.log('Terminal event:', { name, data });
+      }
+    });
+
     this.term.on('key', (name: string, matches: string[], data: { isCharacter: boolean }) => {
       if (this.isExiting) return;
 
-      // Shift + Enter 처리 (terminal-kit에서는 다양한 방식으로 감지됨)
+      // 디버그용 키 이벤트 로그
+      if (process.env.DEBUG === 'true') {
+        console.log('Key event:', { name, matches, isCharacter: data.isCharacter });
+      }
+
+      // Enter 키 처리
       if (name === 'ENTER' || name === 'KP_ENTER') {
-        if (matches && matches.includes('SHIFT')) {
+        // Shift가 눌린 상태인지 확인 (여러 방식으로 체크)
+        const isShiftPressed = matches && (
+          matches.includes('SHIFT') || 
+          matches.includes('shift') ||
+          matches.some(m => m.toLowerCase().includes('shift'))
+        );
+        
+        if (isShiftPressed) {
           // Shift + Enter: 줄바꿈 추가
           this.currentInput += '\n';
           this.draw();
@@ -60,14 +82,33 @@ export class ChatInterface {
         this.isProcessingEnter = true;
         this.sendMessage(this.currentInput);
         setTimeout(() => { this.isProcessingEnter = false; }, 50);
-      } else if (name === 'SHIFT_ENTER') {
+        return;
+      }
+      
+      // 다양한 Shift+Enter 패턴 감지
+      if (name === 'SHIFT_ENTER' || name === 'shift_enter' || name === 'S-ENTER') {
         this.currentInput += '\n';
         this.draw();
-        return; // 여기서 종료하여 아래 draw()를 중복 호출하지 않음
-      } else if (name === 'BACKSPACE') {
-        this.currentInput = this.currentInput.slice(0, -1);
+        return;
+      }
+      
+      // 백스페이스 처리 개선
+      if (name === 'BACKSPACE') {
+        if (this.currentInput.length > 0) {
+          this.currentInput = this.currentInput.slice(0, -1);
+        }
       } else if (name === 'CTRL_C') {
         this.exit();
+      } else if (name === 'CTRL_ENTER') {
+        // Ctrl+Enter도 줄바꿈으로 처리 (대안)
+        this.currentInput += '\n';
+        this.draw();
+        return;
+      } else if (name === 'ALT_ENTER') {
+        // Alt+Enter도 줄바꿈으로 처리 (추가 대안)
+        this.currentInput += '\n';
+        this.draw();
+        return;
       } else if (name === 'CTRL_F') {
         this.handleFileSelection();
       } else if (name === 'CTRL_H') {
@@ -97,7 +138,9 @@ export class ChatInterface {
       } else if (data.isCharacter) {
         // Shift+Enter로 인한 이스케이프 시퀀스 처리
         if (name === '\\') {
-          // Shift+Enter에서 '\'가 입력되는 경우 무시
+          // Shift+Enter가 '\' 문자로 감지되는 경우 줄바꿈으로 처리
+          this.currentInput += '\n';
+          this.draw();
           return;
         }
         
@@ -202,6 +245,15 @@ export class ChatInterface {
         return;
       }
       
+      // Welcome 메시지 처리 - 초기 접속 시에만 표시
+      if (data.message && data.message.includes('Welcome to')) {
+        if (!this.hasShownWelcomeMessage) {
+          this.hasShownWelcomeMessage = true;
+          this.displayMessage('system', data.message);
+        }
+        return;
+      }
+      
       // 일반 시스템 메시지는 그대로 표시
       this.displayMessage('system', data.message);
     });
@@ -209,6 +261,12 @@ export class ChatInterface {
     this.client.on('user_count', (data) => {
       if (data.data && typeof data.data.count === 'number') {
         this.userCount = data.data.count;
+        
+        // 사용자 목록 업데이트 (서버에서 users 배열을 보낸 경우)
+        if (data.data.users && Array.isArray(data.data.users)) {
+          this.userList = data.data.users;
+        }
+        
         this.updateWindowTitle();
         this.needsFullRedraw = true;
         this.draw();
@@ -228,6 +286,7 @@ export class ChatInterface {
       // 서버에서 join 메시지를 보내므로 클라이언트에서는 별도 메시지 표시하지 않음
       // 초기 연결임을 표시만 함
       this.hasShownInitialJoinMessage = false; // 서버 메시지를 기다림
+      this.hasShownWelcomeMessage = false; // 서버 welcome 메시지를 기다림
     });
 
     this.client.on('reconnected', () => {
@@ -241,7 +300,10 @@ export class ChatInterface {
   }
 
   private sendMessage(message: string): void {
-    const trimmedMessage = message.trim();
+    // \\n 텍스트를 실제 줄바꿈으로 변환
+    let processedMessage = message.replace(/\\n/g, '\n');
+    
+    const trimmedMessage = processedMessage.trim();
     if (!trimmedMessage) return;
 
     if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
@@ -333,7 +395,7 @@ export class ChatInterface {
     this.history.push('');
     this.history.push('💡 Quick Guide:');
     this.history.push('  • Type messages and press Enter to send');
-    this.history.push('  • Use Shift + Enter for line breaks');
+    this.history.push('  • Use \\ key for line breaks (or type \\n)');
     this.history.push('  • Use @filepath to send image files (Only jpg, jpeg, png, gif, webp)');
     this.history.push('  • Use arrow keys ↑↓ to scroll through messages');
     this.history.push('  • Type /help for more commands');
@@ -357,7 +419,7 @@ export class ChatInterface {
     this.displayMessage('system', '🗨️  Basic Commands:');
     this.displayMessage('system', '  • Type any message to send to the room');
     this.displayMessage('system', '  • Press Enter to send message');
-    this.displayMessage('system', '  • Press Shift+Enter for new line');
+    this.displayMessage('system', '  • Press \\ key or type \\n for new line');
     this.displayMessage('system', '  • Press Ctrl+C to exit');
     this.displayMessage('system', '');
     this.displayMessage('system', '📎 File Attachment:');
@@ -1137,43 +1199,81 @@ export class ChatInterface {
     const inputBoxHeight = inputHeight + 2;
     const hintAreaHeight = 3; // 힌트 영역 높이
     const messageBoxHeight = this.height - inputBoxHeight - hintAreaHeight;
+    
+    // 메인 영역 너비 (사이드바 공간 제외)
+    const mainAreaWidth = this.width - this.SIDEBAR_WIDTH - 1; // -1은 구분자
 
-    // 메시지 영역 테두리
+    // 메시지 영역 테두리 (메인 영역만)
     this.term.brightBlack();
-    this.term.moveTo(1, 1)('┌' + '─'.repeat(this.width - 2) + '┐');
+    this.term.moveTo(1, 1)('┌' + '─'.repeat(mainAreaWidth - 2) + '┐');
     
-    // 헤더에 방 이름과 사용자 수 표시
+    // 헤더에 방 이름 표시 (메인 영역에만)
     const headerText = `📍 ${this.room} Room`;
-    const userCountText = `👥 ${this.userCount} user${this.userCount > 1 ? 's' : ''}`;
-    const headerLength = headerText.length + userCountText.length + 3; // 공백 포함
+    const availableHeaderWidth = mainAreaWidth - 4;
     
-    if (headerLength <= this.width - 4) {
-      const spacer = ' '.repeat(this.width - 4 - headerLength);
-      this.term.moveTo(2, 1);
-      this.term.cyan()(headerText);
-      this.term.moveTo(2 + headerText.length, 1)(spacer);
-      this.term.green()(userCountText);
-    } else {
-      // 공간이 부족한 경우 간단하게 표시
-      const simpleHeader = `${this.room} (${this.userCount})`;
-      this.term.moveTo(2, 1);
-      this.term.cyan()(simpleHeader.slice(0, this.width - 4));
-    }
+    this.term.moveTo(2, 1);
+    this.term.cyan()(headerText.slice(0, availableHeaderWidth));
     
+    // 메시지 영역 세로 테두리 (메인 영역만)
     for (let y = 2; y < messageBoxHeight; y++) {
       this.term.moveTo(1, y)('│');
-      this.term.moveTo(this.width, y)('│');
+      this.term.moveTo(mainAreaWidth, y)('│');
     }
-    this.term.moveTo(1, messageBoxHeight)('└' + '─'.repeat(this.width - 2) + '┘');
+    this.term.moveTo(1, messageBoxHeight)('└' + '─'.repeat(mainAreaWidth - 2) + '┘');
+
+    // 사이드바 그리기
+    this.drawSidebar(messageBoxHeight);
 
     this.drawMessageArea(messageBoxHeight);
     this.drawInputArea();
   }
 
+  private drawSidebar(messageBoxHeight: number): void {
+    const sidebarX = this.width - this.SIDEBAR_WIDTH + 1;
+    
+    // 사이드바 테두리
+    this.term.brightBlack();
+    this.term.moveTo(sidebarX, 1)('┌' + '─'.repeat(this.SIDEBAR_WIDTH - 2) + '┐');
+    
+    // 사이드바 헤더 배경 지우기
+    this.term.moveTo(sidebarX + 1, 1);
+    this.term(' '.repeat(this.SIDEBAR_WIDTH - 2));
+    
+    // 사이드바 헤더
+    const sidebarHeader = `👥 ${this.userCount} users`;
+    this.term.moveTo(sidebarX + 1, 1);
+    this.term.green()(sidebarHeader.slice(0, this.SIDEBAR_WIDTH - 2));
+    
+    // 사이드바 세로 테두리와 사용자 목록
+    const maxUsers = messageBoxHeight - 3; // 헤더와 하단 테두리 제외
+    for (let y = 2; y < messageBoxHeight; y++) {
+      this.term.brightBlack();
+      this.term.moveTo(sidebarX, y)('│');
+      this.term.moveTo(this.width, y)('│');
+      
+      // 사이드바 내부 영역 지우기
+      this.term.moveTo(sidebarX + 1, y);
+      this.term(' '.repeat(this.SIDEBAR_WIDTH - 2));
+      
+      // 사용자 목록 표시
+      const userIndex = y - 2;
+      if (userIndex < this.userList.length && userIndex < maxUsers) {
+        const user = this.userList[userIndex];
+        const displayName = user === this.nickname ? `${user} (me)` : user;
+        this.term.moveTo(sidebarX + 1, y);
+        this.term.white()(displayName.slice(0, this.SIDEBAR_WIDTH - 3));
+      }
+    }
+    
+    // 사이드바 하단 테두리
+    this.term.moveTo(sidebarX, messageBoxHeight)('└' + '─'.repeat(this.SIDEBAR_WIDTH - 2) + '┘');
+  }
+
   private drawMessageArea(messageBoxHeight: number): void {
 
     const messageAreaHeight = messageBoxHeight - 3; // 헤더 고려하여 -3
-    const messageWidth = this.width - 4; // 좌우 패딩 고려
+    const mainAreaWidth = this.width - this.SIDEBAR_WIDTH - 1; // 사이드바 제외
+    const messageWidth = mainAreaWidth - 4; // 좌우 패딩 고려
     
     // 모든 메시지의 줄 수 계산 (이미지 줄 수 정확히 계산)
     let totalLines = 0;
@@ -1300,14 +1400,15 @@ export class ChatInterface {
     // 입력 힌트 및 상태 표시
     if (this.currentInput.length === 0) {
       this.term.gray();
-      this.term.moveTo(2, inputY + 1)('Type a message... (@filepath for files, /help for commands)');
+      this.term.moveTo(2, inputY + 1)('Type a message... (\\ for new line, @filepath for files)');
       this.term.white();
     } else {
       inputLines.forEach((line, index) => {
         this.term.moveTo(2, inputY + 1 + index)(line);
         if (index === inputLines.length - 1) {
-          cursorX += line.length;
-          cursorY += index;
+          // 마지막 줄에서 커서 위치 계산
+          cursorX = 2 + line.length;
+          cursorY = inputY + 1 + index;
         }
       });
       
@@ -1363,16 +1464,47 @@ export class ChatInterface {
     const inputY = messageBoxHeight + 1;
     const hintY = inputY + inputHeight + 2;
 
-    // 입력 영역 지우기 (이전 내용 제거)
-    for (let i = 0; i < inputHeight; i++) {
-      this.term.moveTo(2, inputY + 1 + i);
-      this.term(' '.repeat(this.width - 4));
-    }
+    // 이전 입력의 높이 계산
+    const lastInputLines = this.lastInputContent.split('\n');
+    const lastInputHeight = Math.max(1, lastInputLines.length);
 
-    // 힌트 영역 지우기
-    for (let i = 0; i < hintAreaHeight - 2; i++) {
-      this.term.moveTo(2, hintY + 1 + i);
-      this.term(' '.repeat(this.width - 4));
+    // 높이가 변경된 경우 전체 입력 영역을 다시 그려야 함
+    if (inputHeight !== lastInputHeight) {
+      // 이전 입력 영역과 힌트 영역을 완전히 지우기
+      const maxHeight = Math.max(inputHeight, lastInputHeight);
+      for (let y = messageBoxHeight + 1; y <= this.height; y++) {
+        this.term.moveTo(1, y)(' '.repeat(this.width));
+      }
+
+      // 입력 영역 테두리 다시 그리기
+      this.term.brightWhite();
+      this.term.moveTo(1, inputY)('┌' + '─'.repeat(this.width - 2) + '┐');
+      for (let i = 0; i < inputHeight; i++) {
+        this.term.moveTo(1, inputY + 1 + i)('│');
+        this.term.moveTo(this.width, inputY + 1 + i)('│');
+      }
+      this.term.moveTo(1, inputY + inputHeight + 1)('└' + '─'.repeat(this.width - 2) + '┘');
+
+      // 힌트 영역 테두리 다시 그리기
+      this.term.brightBlack();
+      this.term.moveTo(1, hintY)('┌' + '─'.repeat(this.width - 2) + '┐');
+      for (let i = 0; i < hintAreaHeight - 2; i++) {
+        this.term.moveTo(1, hintY + 1 + i)('│');
+        this.term.moveTo(this.width, hintY + 1 + i)('│');
+      }
+      this.term.moveTo(1, hintY + hintAreaHeight - 1)('└' + '─'.repeat(this.width - 2) + '┘');
+    } else {
+      // 높이가 같으면 내용만 지우기
+      for (let i = 0; i < inputHeight; i++) {
+        this.term.moveTo(2, inputY + 1 + i);
+        this.term(' '.repeat(this.width - 4));
+      }
+
+      // 힌트 영역 지우기
+      for (let i = 0; i < hintAreaHeight - 2; i++) {
+        this.term.moveTo(2, hintY + 1 + i);
+        this.term(' '.repeat(this.width - 4));
+      }
     }
 
     let cursorX = 2;
@@ -1381,7 +1513,7 @@ export class ChatInterface {
     // 입력 힌트 및 상태 표시
     if (this.currentInput.length === 0) {
       this.term.gray();
-      this.term.moveTo(2, inputY + 1)('Type a message... (@filepath for files, /help for commands)');
+      this.term.moveTo(2, inputY + 1)('Type a message... (\\ for new line, @filepath for files)');
       this.term.white();
     } else {
       inputLines.forEach((line, index) => {
