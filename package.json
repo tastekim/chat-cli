@@ -25,7 +25,7 @@
     "url": "https://github.com/tastekim"
   },
   "license": "MIT",
-  "description": "A real-time terminal chat client with WebSocket support",
+  "description": "Connect with developers worldwide through an interactive terminal chat experience while you code!",
   "homepage": "https://github.com/tastekim/chat-cli#readme",
   "repository": {
     "type": "git",
