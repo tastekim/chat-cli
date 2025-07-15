@@ -1405,9 +1405,14 @@ export class ChatInterface {
     for (let i = 0; i < this.history.length; i++) {
       const message = this.history[i] as string;
       let wrappedLines: string[];
-      
-      // 이미지 메시지인 경우 실제 줄 수 계산
-      if (message.includes('sent an image:')) {
+
+      // iTerm2 이미지인 경우 줄넘김 처리 없이 추가
+      if (
+        this.isItermImage(message)
+      ) {
+        wrappedLines = [message];
+      } else if (message.includes('sent an image:')) {
+        // 이미지 메시지인 경우 실제 줄 수 계산
         // 이미지 메시지의 실제 줄 수 계산
         wrappedLines = this.wrapMessage(message, messageWidth);
         // 이미지의 실제 줄 수를 추가로 계산
@@ -1493,9 +1498,12 @@ export class ChatInterface {
           this.term.styleReset();
           // 메시지가 사이드바 영역을 침범하지 않도록 제한
           const maxDisplayWidth = mainAreaWidth - 4; // 좌우 패딩 고려
-          const displayLine = this.getVisibleLength(line) > maxDisplayWidth 
-            ? this.truncateToVisibleLength(line, maxDisplayWidth)
-            : line;
+          
+          let displayLine = line;
+          if (!this.isItermImage(line) && this.getVisibleLength(line) > maxDisplayWidth) {
+            displayLine = this.truncateToVisibleLength(line, maxDisplayWidth)
+          }
+          
           this.term(displayLine);
           currentY++;
         } else {
@@ -1711,4 +1719,9 @@ export class ChatInterface {
     this.term.processExit(0);
   }
 
+  // iterm2 이미지 프로토콜 여부
+  private isItermImage(message: string): boolean {
+    return message.includes('\x1b]1337;File=') ||
+        message.includes('\u001b]1337;File=');
+  }
 }
