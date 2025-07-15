@@ -27,9 +27,9 @@ program
       });
       
       const setupFlow = new SetupFlow();
-      const { nickname, room } = await setupFlow.start();
+      const { nickname, room, location } = await setupFlow.start();
       
-      const chatInterface = new ChatInterface(nickname, room);
+      const chatInterface = new ChatInterface(nickname, room, location);
       await chatInterface.start();
     } catch (error) {
       if (error instanceof Error && error.message.includes('User force closed')) {

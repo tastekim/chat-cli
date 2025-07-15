@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
+import { LocationInfo } from '../utils/location-detector';
 
 export interface MessageData {
   type: 'message' | 'system' | 'join' | 'leave' | 'user_count';
@@ -7,12 +8,14 @@ export interface MessageData {
   message: string | Buffer;
   room: string;
   timestamp: Date;
+  location?: { countryCode: string; country: string };
   data?: any;
 }
 
 export class WebSocketClient extends EventEmitter {
   private ws: WebSocket | null = null;
   private serverUrl: string;
+  private userLocation: LocationInfo | null = null;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
   private reconnectDelay: number = 1000;
@@ -329,16 +332,18 @@ export class WebSocketClient extends EventEmitter {
     }
   }
 
-  async connectWithParams(nickname: string, room: string): Promise<void> {
+  async connectWithParams(nickname: string, room: string, location?: LocationInfo): Promise<void> {
     const url = new URL(this.serverUrl);
     url.searchParams.set('nickname', nickname);
     url.searchParams.set('room', room);
     
     this.serverUrl = url.toString();
+    this.userLocation = location || null;
     
     if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
       console.log('🔗 Connecting to:', this.serverUrl);
       console.log('👤 Nickname:', nickname, 'Room:', room);
+      console.log('📍 User Location set to:', this.userLocation);
     }
     
     return this.connect();
@@ -372,12 +377,17 @@ export class WebSocketClient extends EventEmitter {
           type: 'message',
           message,
           timestamp: new Date(),
+          location: this.userLocation ? {
+            countryCode: this.userLocation.countryCode,
+            country: this.userLocation.country
+          } : undefined,
         };
         
         const jsonString = JSON.stringify(msgObj);
         
         if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
           console.log('📤 Sending text message object:', msgObj);
+          console.log('📤 User location when sending:', this.userLocation);
           console.log('📤 JSON string being sent:', jsonString);
         }
         

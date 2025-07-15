@@ -1,6 +1,7 @@
 import { terminal, Terminal } from 'terminal-kit';
 import { WebSocketClient } from '../core/client';
 import { MessageFormatter } from './message-formatter';
+import { LocationDetector, LocationInfo } from '../utils/location-detector';
 import terminalImage from 'terminal-image';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -8,6 +9,7 @@ import * as path from 'path';
 export class ChatInterface {
   private nickname: string;
   private room: string;
+  private location: LocationInfo;
   private term: Terminal;
   private client: WebSocketClient;
   private messageFormatter: MessageFormatter;
@@ -20,7 +22,6 @@ export class ChatInterface {
   private fileSelectionMode: boolean = false;
   private availableFiles: string[] = [];
   private selectedFileIndex: number = -1;
-  private imeComposing: string = ''; // IME 입력 중인 문자열
   private scrollOffset: number = 0; // 스크롤 오프셋
   private lastInputContent: string = ''; // 이전 입력 내용
   private needsFullRedraw: boolean = true; // 전체 재렌더링 필요 여부
@@ -33,9 +34,10 @@ export class ChatInterface {
   private userList: string[] = []; // 현재 방의 사용자 목록 (사이드바 표시용)
   private readonly SIDEBAR_WIDTH = 20; // 우측 사이드바 너비
 
-  constructor(nickname: string, room: string) {
+  constructor(nickname: string, room: string, location: LocationInfo) {
     this.nickname = nickname;
     this.room = room;
+    this.location = location;
     this.term = terminal;
     this.messageFormatter = new MessageFormatter(this.term);
     this.client = new WebSocketClient();
@@ -53,6 +55,7 @@ export class ChatInterface {
         console.log('Terminal event:', { name, data });
       }
     });
+
 
     this.term.on('key', (name: string, matches: string[], data: { isCharacter: boolean }) => {
       if (this.isExiting) return;
@@ -80,6 +83,8 @@ export class ChatInterface {
         
         if (this.isProcessingEnter) return;
         this.isProcessingEnter = true;
+        
+        
         this.sendMessage(this.currentInput);
         setTimeout(() => { this.isProcessingEnter = false; }, 50);
         return;
@@ -183,7 +188,7 @@ export class ChatInterface {
       this.height = this.term.height;
       this.showWelcomeMessage();
       try {
-        await this.client.connectWithParams(this.nickname, this.room);
+        await this.client.connectWithParams(this.nickname, this.room, this.location);
         this.setupClientEventHandlers();
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -204,10 +209,24 @@ export class ChatInterface {
       }
       
       if (Buffer.isBuffer(data.message)) {
-        this.displayMessage('image', data.message, data.nickname);
+        // 이미지 메시지에도 지역 정보 표시
+        let displayNickname = data.nickname;
+        if (data.location && data.nickname) {
+          const flag = LocationDetector.getCountryFlag(data.location.countryCode);
+          displayNickname = `${data.nickname}(${flag}${data.location.countryCode})`;
+        }
+        this.displayMessage('image', data.message, displayNickname);
       } else {
         const messageType = data.nickname === this.nickname ? 'own' : 'user';
-        this.displayMessage(messageType, data.message, data.nickname);
+        
+        // 지역 정보가 있는 경우 닉네임에 추가
+        let displayNickname = data.nickname;
+        if (data.location && data.nickname) {
+          const flag = LocationDetector.getCountryFlag(data.location.countryCode);
+          displayNickname = `${data.nickname}(${flag}${data.location.countryCode})`;
+        }
+        
+        this.displayMessage(messageType, data.message, displayNickname);
       }
     });
 
@@ -541,7 +560,7 @@ export class ChatInterface {
   private showFileAttachmentStatus(y: number): void {
     const filePath = this.currentInput.substring(1).trim();
     if (!filePath) {
-      this.term.gray();
+      // 화면 좌측 하단에 고정된 IME 입력 표시창
       if (this.fileSelectionMode && this.availableFiles.length > 0) {
         // 파일 목록을 힌트 UI로 표시
         this.term.moveTo(2, y)(`📎 Available files (${this.availableFiles.length}):`);
@@ -609,7 +628,7 @@ export class ChatInterface {
       this.term.yellow();
       this.term.moveTo(2, y)('⚠️  Unknown command - press Enter to see available commands');
     } else {
-      this.term.gray();
+      // 화면 좌측 하단에 고정된 IME 입력 표시창
       this.term.moveTo(2, y)('💬 Type command name (help, file, clear, etc.)');
     }
   }
@@ -969,25 +988,18 @@ export class ChatInterface {
     const messageLines = message.split('\n');
     
     for (const line of messageLines) {
-      // ANSI 이스케이프 시퀀스가 포함된 경우 처리하지 않고 그대로 전달
-      if (line.includes('\u001b[') || line.includes('\x1b[')) {
-        lines.push(line);
-        continue;
-      }
+      // terminal-kit 마크업과 ANSI 시퀀스를 고려한 실제 표시 길이 계산
+      const visibleLength = this.getVisibleLength(line);
       
-      if (line.length <= maxWidth) {
+      if (visibleLength <= maxWidth) {
         lines.push(line);
       } else {
         // 긴 줄을 maxWidth로 나누어 처리
         let currentLine = line;
-        while (currentLine.length > maxWidth) {
+        
+        while (this.getVisibleLength(currentLine) > maxWidth) {
           // 단어 경계에서 자르기 시도
-          let breakPoint = maxWidth;
-          const lastSpace = currentLine.lastIndexOf(' ', maxWidth);
-          
-          if (lastSpace > maxWidth * 0.7) { // 너무 짧지 않으면 단어 경계에서 자르기
-            breakPoint = lastSpace;
-          }
+          let breakPoint = this.findBreakPoint(currentLine, maxWidth);
           
           lines.push(currentLine.substring(0, breakPoint));
           currentLine = currentLine.substring(breakPoint).trim();
@@ -1000,6 +1012,92 @@ export class ChatInterface {
     }
     
     return lines;
+  }
+
+  // terminal-kit 마크업을 제거하고 실제 표시되는 문자열 길이를 계산
+  private getVisibleLength(text: string): number {
+    // terminal-kit 마크업 패턴 제거 (^K, ^g, ^b, ^y, ^r, ^m, ^_, ^c, ^+, ^/ 등)
+    let cleanText = text.replace(/\^[KgbyrmcRGBYCMWkwKGBYCMWR_+/]/g, '');
+    // ^ 단독으로 나타나는 경우 (스타일 리셋)
+    cleanText = cleanText.replace(/\^(?![KgbyrmcRGBYCMWkwKGBYCMWR_+/])/g, '');
+    // ANSI 이스케이프 시퀀스 제거
+    cleanText = cleanText.replace(/\u001b\[[0-9;]*m/g, '');
+    cleanText = cleanText.replace(/\x1b\[[0-9;]*m/g, '');
+    
+    return cleanText.length;
+  }
+
+  // 마크업을 유지하면서 표시 길이로 텍스트를 자르기
+  private truncateToVisibleLength(text: string, maxWidth: number): string {
+    let visibleCount = 0;
+    let result = '';
+    let i = 0;
+    
+    while (i < text.length && visibleCount < maxWidth) {
+      const char = text[i];
+      
+      // terminal-kit 마크업 시작
+      if (char === '^' && i + 1 < text.length) {
+        const nextChar = text[i + 1];
+        if (/[KgbyrmcRGBYCMWkwKGBYCMWR_+/]/.test(nextChar)) {
+          // 마크업은 결과에 포함하지만 카운트하지 않음
+          result += char + nextChar;
+          i += 2;
+          continue;
+        }
+      }
+      
+      // 일반 문자인 경우 카운트하고 추가
+      result += char;
+      visibleCount++;
+      i++;
+    }
+    
+    return result;
+  }
+
+  // 적절한 줄바꿈 지점을 찾기
+  private findBreakPoint(text: string, maxWidth: number): number {
+    let visibleCount = 0;
+    let lastSpaceIndex = -1;
+    let inMarkup = false;
+    
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      
+      // terminal-kit 마크업 시작
+      if (char === '^' && i + 1 < text.length) {
+        const nextChar = text[i + 1];
+        if (/[KgbyrmcRGBYCMWkwKGBYCMWR_+/]/.test(nextChar)) {
+          inMarkup = true;
+          i++; // 다음 문자도 건너뛰기
+          continue;
+        }
+      }
+      
+      // 마크업이 아닌 실제 문자인 경우만 카운트
+      if (!inMarkup) {
+        if (char === ' ') {
+          lastSpaceIndex = i;
+        }
+        visibleCount++;
+        
+        if (visibleCount >= maxWidth) {
+          // 적절한 공백 지점이 있으면 그곳에서 자르기
+          if (lastSpaceIndex > 0 && lastSpaceIndex > maxWidth * 0.7) {
+            return lastSpaceIndex;
+          }
+          return i;
+        }
+      }
+      
+      // 마크업 종료 체크 (단독 ^ 또는 다른 마크업 시작)
+      if (inMarkup && (char === '^' || i === text.length - 1)) {
+        inMarkup = false;
+      }
+    }
+    
+    return text.length;
   }
 
   private countActualLines(message: string): number {
@@ -1033,10 +1131,30 @@ export class ChatInterface {
             }
             
             console.debug('Processing image with terminal-image, size:', content.length, 'terminal type:', process.env.TERM);
-            const imageString = await terminalImage.buffer(content, { 
-              width: Math.min(this.width - 4, 80),
-              height: Math.min(this.height - 10, 30)
-            });
+            
+            // iTerm2 감지
+            const isITerm2 = process.env.TERM_PROGRAM === 'iTerm.app';
+            
+            let imageString: string;
+            
+            if (isITerm2) {
+              // iTerm2용 직접 inline image protocol 구현
+              const base64Data = content.toString('base64');
+              const width = Math.min(this.width - 4, 80);
+              const height = Math.min(this.height - 10, 30);
+              
+              // iTerm2 inline image protocol: ESC]1337;File=inline=1:[base64data]^G
+              imageString = `\x1b]1337;File=inline=1;width=${width};height=${height}:${base64Data}\x07`;
+            } else {
+              // 다른 터미널에서는 terminal-image 사용
+              const imageOptions: any = { 
+                width: Math.min(this.width - 4, 80),
+                height: Math.min(this.height - 10, 30),
+                preserveAspectRatio: true
+              };
+              
+              imageString = await terminalImage.buffer(content, imageOptions);
+            }
             console.debug('Image processing result type:', typeof imageString, 'length:', imageString?.length);
             
             // 결과 유효성 검사 - 바이너리 데이터가 텍스트로 출력되는 것 방지
@@ -1273,7 +1391,12 @@ export class ChatInterface {
 
     const messageAreaHeight = messageBoxHeight - 3; // 헤더 고려하여 -3
     const mainAreaWidth = this.width - this.SIDEBAR_WIDTH - 1; // 사이드바 제외
-    const messageWidth = mainAreaWidth - 4; // 좌우 패딩 고려
+    const messageWidth = mainAreaWidth - 8; // 좌우 테두리(2) + 패딩(4) + 추가 여유(2) = 8
+    
+    // 디버깅을 위한 로그 (개발 환경에서만)
+    if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+      console.log(`💡 Width Debug: screen=${this.width}, sidebar=${this.SIDEBAR_WIDTH}, mainArea=${mainAreaWidth}, messageWidth=${messageWidth}`);
+    }
     
     // 모든 메시지의 줄 수 계산 (이미지 줄 수 정확히 계산)
     let totalLines = 0;
@@ -1368,7 +1491,12 @@ export class ChatInterface {
         if (currentY < messageBoxHeight) {
           this.term.moveTo(2, currentY);
           this.term.styleReset();
-          this.term(line);
+          // 메시지가 사이드바 영역을 침범하지 않도록 제한
+          const maxDisplayWidth = mainAreaWidth - 4; // 좌우 패딩 고려
+          const displayLine = this.getVisibleLength(line) > maxDisplayWidth 
+            ? this.truncateToVisibleLength(line, maxDisplayWidth)
+            : line;
+          this.term(displayLine);
           currentY++;
         } else {
           break;
@@ -1399,7 +1527,6 @@ export class ChatInterface {
     
     // 입력 힌트 및 상태 표시
     if (this.currentInput.length === 0) {
-      this.term.gray();
       this.term.moveTo(2, inputY + 1)('Type a message... (\\ for new line, @filepath for files)');
       this.term.white();
     } else {
@@ -1431,15 +1558,7 @@ export class ChatInterface {
       this.showCommandStatus(hintY + 1);
     } else {
       // 기본 힌트 표시
-      this.term.gray();
       this.term.moveTo(2, hintY + 1)('💡 Tip: Use @ for files, / for commands, Ctrl+H for help');
-    }
-
-    // IME 입력 중인 문자를 힌트 영역 하단에 표시
-    if (this.imeComposing) {
-      this.term.gray();
-      this.term.moveTo(2, hintY + 2)(`IME: ${this.imeComposing}`);
-      this.term.styleReset();
     }
 
     this.term.moveTo(cursorX, cursorY);
@@ -1471,7 +1590,6 @@ export class ChatInterface {
     // 높이가 변경된 경우 전체 입력 영역을 다시 그려야 함
     if (inputHeight !== lastInputHeight) {
       // 이전 입력 영역과 힌트 영역을 완전히 지우기
-      const maxHeight = Math.max(inputHeight, lastInputHeight);
       for (let y = messageBoxHeight + 1; y <= this.height; y++) {
         this.term.moveTo(1, y)(' '.repeat(this.width));
       }
@@ -1512,7 +1630,6 @@ export class ChatInterface {
     
     // 입력 힌트 및 상태 표시
     if (this.currentInput.length === 0) {
-      this.term.gray();
       this.term.moveTo(2, inputY + 1)('Type a message... (\\ for new line, @filepath for files)');
       this.term.white();
     } else {
@@ -1532,15 +1649,7 @@ export class ChatInterface {
       this.showCommandStatus(hintY + 1);
     } else {
       // 기본 힌트 표시
-      this.term.gray();
       this.term.moveTo(2, hintY + 1)('💡 Tip: Use @ for files, / for commands, Ctrl+H for help');
-    }
-
-    // IME 입력 중인 문자를 힌트 영역 하단에 표시
-    if (this.imeComposing) {
-      this.term.gray();
-      this.term.moveTo(2, hintY + 2)(`IME: ${this.imeComposing}`);
-      this.term.styleReset();
     }
 
     this.term.moveTo(cursorX, cursorY);
