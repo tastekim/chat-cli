@@ -92,15 +92,25 @@ export class VersionChecker {
   static displayUpdateMessage(versionInfo: VersionInfo, packageName: string): void {
     if (!versionInfo.needsUpdate) return;
 
+    const boxWidth = 49;
+    const currentVersionText = ` Current version: ${versionInfo.current}`;
+    const latestVersionText = ` Latest version:  ${versionInfo.latest}`;
+    const updateCommandText = ` npm install -g ${packageName}@latest`;
+
+    // 각 줄의 길이를 계산해서 패딩 추가
+    const currentPadding = ' '.repeat(boxWidth - currentVersionText.length);
+    const latestPadding = ' '.repeat(boxWidth - latestVersionText.length);
+    const commandPadding = ' '.repeat(boxWidth - updateCommandText.length);
+
     console.log();
     console.log(chalk.yellow('┌─────────────────────────────────────────────────┐'));
     console.log(chalk.yellow('│') + chalk.bold.white('           Update Available!                     ') + chalk.yellow('│'));
     console.log(chalk.yellow('├─────────────────────────────────────────────────┤'));
-    console.log(chalk.yellow('│') + ` Current version: ${chalk.red(versionInfo.current)}                        ` + chalk.yellow('│'));
-    console.log(chalk.yellow('│') + ` Latest version:  ${chalk.green(versionInfo.latest)}                        ` + chalk.yellow('│'));
+    console.log(chalk.yellow('│') + ` Current version: ${chalk.red(versionInfo.current)}${currentPadding}` + chalk.yellow('│'));
+    console.log(chalk.yellow('│') + ` Latest version:  ${chalk.green(versionInfo.latest)}${latestPadding}` + chalk.yellow('│'));
     console.log(chalk.yellow('├─────────────────────────────────────────────────┤'));
     console.log(chalk.yellow('│') + chalk.white(' Run the following command to update:            ') + chalk.yellow('│'));
-    console.log(chalk.yellow('│') + chalk.cyan(` npm install -g ${packageName}@latest              `) + chalk.yellow('│'));
+    console.log(chalk.yellow('│') + chalk.cyan(updateCommandText) + commandPadding + chalk.yellow('│'));
     console.log(chalk.yellow('└─────────────────────────────────────────────────┘'));
     console.log();
   }

@@ -41,9 +41,6 @@ chat-cli
 # Start chatting | 채팅 시작
 chat-cli
 
-# With custom room | 사용자 정의 방으로
-chat-cli --room myroom
-
 # Help | 도움말
 chat-cli --help
 ```
@@ -54,6 +51,7 @@ chat-cli --help
 - 💬 **Real-time messaging** | 실시간 메시징
 - 🖼️ **Image sharing support** | 이미지 공유 지원
 - 🏠 **Multiple chat rooms** | 다중 채팅방
+- 🚀 **Custom room creation** | 커스텀 방 생성
 - 👥 **Multi-user support** | 다중 사용자 지원
 - 🔄 **Auto-reconnection** | 자동 재연결
 
@@ -81,18 +79,29 @@ chat-cli --help
 | `Ctrl + H` | Help | 도움말 |
 | `Ctrl + L` | Clear history | 기록 지우기 |
 | `↑ ↓` | Scroll messages | 메시지 스크롤 |
-| `Shift + Enter` | New line(fixing...) | 줄바꿈(수정중...) |
+| `\` | New line(fixing...) | 줄바꿈(수정중...) |
 | `@` | File hints | 파일 힌트 |
 
-### Commands | 명령어
+### Room Options | 방 옵션
 
-```bash
-# Start with specific nickname | 특정 닉네임으로 시작
-chat-cli --nickname "YourName"
+When you start `chat-cli`, you'll be presented with an interactive menu to select your chat room:
 
-# Join specific room | 특정 방 참가
-chat-cli --room "general"
-```
+`chat-cli`를 실행하면 채팅방을 선택할 수 있는 대화형 메뉴가 표시됩니다:
+
+- **🇰🇷 Korean Room** - For Korean conversations | 한국어 대화방
+- **🇺🇸 English Room** - For English conversations | 영어 대화방  
+- **🇪🇸 Spanish Room** - For Spanish conversations | 스페인어 대화방
+- **🚀 Create Custom Room** - Create your own room to share with friends | 친구들과 공유할 수 있는 커스텀 방 생성
+
+#### Creating Custom Rooms | 커스텀 방 생성
+
+1. Select "Create Custom Room (Share to your friends!)" from the menu
+2. Enter your desired room name (letters, numbers, hyphens, and underscores only)
+3. Share the room name with your friends so they can join the same room
+
+1. 메뉴에서 "Create Custom Room (Share to your friends!)" 선택
+2. 원하는 방 이름 입력 (영문자, 숫자, 하이픈, 언더스코어만 사용 가능)
+3. 친구들과 방 이름을 공유하여 같은 방에 참여할 수 있도록 함
 
 ### Configuration | 설정
 

@@ -76,10 +76,42 @@ export class SetupFlow {
           { name: '🇰🇷 Korean Room', value: 'korean' },
           { name: '🇺🇸 English Room', value: 'english' },
           { name: '🇪🇸 Spanish Room', value: 'spanish' },
+          { name: '🚀 Create Custom Room (Share to your friends!)', value: 'custom' },
         ],
       },
     ]);
 
+    if (room === 'custom') {
+      return await this.createCustomRoom();
+    }
+
     return room;
+  }
+
+  private async createCustomRoom(): Promise<string> {
+    const { customRoomName } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'customRoomName',
+        message: 'Enter custom room name:',
+        validate: (input: string) => {
+          if (!input.trim()) {
+            return 'Room name cannot be empty';
+          }
+          if (input.length > 30) {
+            return 'Room name must be 30 characters or less';
+          }
+          if (!/^[a-zA-Z0-9_-]+$/.test(input.trim())) {
+            return 'Room name can only contain letters, numbers, hyphens, and underscores';
+          }
+          return true;
+        },
+      },
+    ]);
+
+    const roomName = customRoomName.trim();
+    console.log(chalk.green(`✨ Custom room "${roomName}" created! Share this name with your friends to join.`));
+    
+    return roomName;
   }
 }
