@@ -32,7 +32,7 @@ export class ChatInterface {
   private hasShownWelcomeMessage: boolean = false; // welcome 메시지 표시 여부
   private connectedUsers: Set<string> = new Set(); // 연결된 사용자 목록
   private userList: string[] = []; // 현재 방의 사용자 목록 (사이드바 표시용)
-  private readonly SIDEBAR_WIDTH = 20; // 우측 사이드바 너비
+  private readonly SIDEBAR_WIDTH = 20; // 우측 사이드바 너비 (기본값)
 
   constructor(nickname: string, room: string, location: LocationInfo) {
     this.nickname = nickname;
@@ -533,6 +533,18 @@ export class ChatInterface {
         return;
       }
       
+      // 파일 크기 검사 - iTerm2 안정성을 위한 경고
+      const bufferSize = buffer.length;
+      const maxRecommendedSize = 5 * 1024 * 1024; // 5MB
+      
+      if (bufferSize > maxRecommendedSize) {
+        this.displayMessage('system', `⚠️ Large file detected (${this.formatFileSize(bufferSize)}). This may cause terminal instability.`);
+        this.displayMessage('system', '💡 Consider resizing the image to under 5MB for better performance.');
+        
+        // 사용자가 계속 진행할지 확인하지 않고 자동으로 진행하되 경고만 표시
+        this.displayMessage('system', '📤 Sending large file... Please wait...');
+      }
+      
       this.displayMessage('system', '📡 Sending file...');
       
       if (!this.client.sendMessage(buffer)) {
@@ -563,16 +575,37 @@ export class ChatInterface {
       // 화면 좌측 하단에 고정된 IME 입력 표시창
       if (this.fileSelectionMode && this.availableFiles.length > 0) {
         // 파일 목록을 힌트 UI로 표시
-        this.term.moveTo(2, y)(`📎 Available files (${this.availableFiles.length}):`);
+        const filesText = `📎 Available files (${this.availableFiles.length}):`;
+        const availableWidth = Math.max(1, this.width - 4);
+        const truncatedFilesText = filesText.length > availableWidth 
+          ? filesText.substring(0, availableWidth) 
+          : filesText;
+        this.term.moveTo(2, y)(truncatedFilesText);
+        
         const displayFiles = this.availableFiles.slice(0, 2); // 최대 2개까지만 표시
         displayFiles.forEach((file, index) => {
-          this.term.moveTo(4, y + 1 + index)(`${index === this.selectedFileIndex ? '▶' : ' '} ${file}`);
+          const fileText = `${index === this.selectedFileIndex ? '▶' : ' '} ${file}`;
+          const truncatedFileText = fileText.length > availableWidth - 2 
+            ? fileText.substring(0, availableWidth - 2) 
+            : fileText;
+          this.term.moveTo(4, y + 1 + index)(truncatedFileText);
         });
       } else {
         // @ 입력 시 홈 디렉토리에서 시작한다는 힌트 표시
         const homeDir = require('os').homedir();
-        this.term.moveTo(2, y)(`📎 Start with ~/filename (e.g., ~/Pictures/image.jpg)`);
-        this.term.moveTo(2, y + 1)(`   Tab to see files in ${homeDir.replace(require('os').homedir(), '~')}`);
+        const availableWidth = Math.max(1, this.width - 4);
+        
+        const hint1 = `📎 Start with ~/filename (e.g., ~/Pictures/image.jpg)`;
+        const truncatedHint1 = hint1.length > availableWidth 
+          ? hint1.substring(0, availableWidth) 
+          : hint1;
+        this.term.moveTo(2, y)(truncatedHint1);
+        
+        const hint2 = `   Tab to see files in ${homeDir.replace(require('os').homedir(), '~')}`;
+        const truncatedHint2 = hint2.length > availableWidth 
+          ? hint2.substring(0, availableWidth) 
+          : hint2;
+        this.term.moveTo(2, y + 1)(truncatedHint2);
       }
       return;
     }
@@ -585,7 +618,12 @@ export class ChatInterface {
     
     if (!fs.existsSync(absolutePath)) {
       this.term.red();
-      this.term.moveTo(2, y)('❌ File not found');
+      const notFoundText = '❌ File not found';
+      const availableWidth = Math.max(1, this.width - 4);
+      const truncatedNotFoundText = notFoundText.length > availableWidth 
+        ? notFoundText.substring(0, availableWidth) 
+        : notFoundText;
+      this.term.moveTo(2, y)(truncatedNotFoundText);
     } else {
       // 실시간 파일 매칭 결과 표시
       if (this.fileSelectionMode && this.availableFiles.length > 0) {
@@ -604,14 +642,29 @@ export class ChatInterface {
           
           if (stats.size > 10 * 1024 * 1024) {
             this.term.red();
-            this.term.moveTo(2, y)(`❌ File too large: ${fileName} (${fileSize})`);
+            const tooLargeText = `❌ File too large: ${fileName} (${fileSize})`;
+            const availableWidth = Math.max(1, this.width - 4);
+            const truncatedTooLargeText = tooLargeText.length > availableWidth 
+              ? tooLargeText.substring(0, availableWidth) 
+              : tooLargeText;
+            this.term.moveTo(2, y)(truncatedTooLargeText);
           } else {
             this.term.green();
-            this.term.moveTo(2, y)(`📎 Ready to send: ${fileName} (${fileSize})`);
+            const readyText = `📎 Ready to send: ${fileName} (${fileSize})`;
+            const availableWidth = Math.max(1, this.width - 4);
+            const truncatedReadyText = readyText.length > availableWidth 
+              ? readyText.substring(0, availableWidth) 
+              : readyText;
+            this.term.moveTo(2, y)(truncatedReadyText);
           }
         } catch (error) {
           this.term.red();
-          this.term.moveTo(2, y)('❌ File not found - try typing to search');
+          const searchText = '❌ File not found - try typing to search';
+          const availableWidth = Math.max(1, this.width - 4);
+          const truncatedSearchText = searchText.length > availableWidth 
+            ? searchText.substring(0, availableWidth) 
+            : searchText;
+          this.term.moveTo(2, y)(truncatedSearchText);
         }
       }
     }
@@ -621,15 +674,29 @@ export class ChatInterface {
     const command = this.currentInput.toLowerCase().trim();
     const validCommands = ['/help', '/h', '/commands', '/file', '/attach', '/clear'];
     
+    const availableWidth = Math.max(1, this.width - 4);
+    
     if (validCommands.includes(command)) {
       this.term.green();
-      this.term.moveTo(2, y)('✅ Valid command');
+      const validText = '✅ Valid command';
+      const truncatedValidText = validText.length > availableWidth 
+        ? validText.substring(0, availableWidth) 
+        : validText;
+      this.term.moveTo(2, y)(truncatedValidText);
     } else if (command.length > 1) {
       this.term.yellow();
-      this.term.moveTo(2, y)('⚠️  Unknown command - press Enter to see available commands');
+      const unknownText = '⚠️  Unknown command - press Enter to see available commands';
+      const truncatedUnknownText = unknownText.length > availableWidth 
+        ? unknownText.substring(0, availableWidth) 
+        : unknownText;
+      this.term.moveTo(2, y)(truncatedUnknownText);
     } else {
       // 화면 좌측 하단에 고정된 IME 입력 표시창
-      this.term.moveTo(2, y)('💬 Type command name (help, file, clear, etc.)');
+      const commandText = '💬 Type command name (help, file, clear, etc.)';
+      const truncatedCommandText = commandText.length > availableWidth 
+        ? commandText.substring(0, availableWidth) 
+        : commandText;
+      this.term.moveTo(2, y)(truncatedCommandText);
     }
   }
 
@@ -996,13 +1063,16 @@ export class ChatInterface {
       } else {
         // 긴 줄을 maxWidth로 나누어 처리
         let currentLine = line;
+        let iteration = 0;
         
-        while (this.getVisibleLength(currentLine) > maxWidth) {
+        while (this.getVisibleLength(currentLine) > maxWidth && iteration < 10) {
           // 단어 경계에서 자르기 시도
-          let breakPoint = this.findBreakPoint(currentLine, maxWidth);
+          const breakPoint = this.findBreakPoint(currentLine, maxWidth);
           
-          lines.push(currentLine.substring(0, breakPoint));
+          const part = currentLine.substring(0, breakPoint);
+          lines.push(part);
           currentLine = currentLine.substring(breakPoint).trim();
+          iteration++;
         }
         
         if (currentLine.length > 0) {
@@ -1020,81 +1090,44 @@ export class ChatInterface {
     let cleanText = text.replace(/\^[KgbyrmcRGBYCMWkwKGBYCMWR_+/]/g, '');
     // ^ 단독으로 나타나는 경우 (스타일 리셋)
     cleanText = cleanText.replace(/\^(?![KgbyrmcRGBYCMWkwKGBYCMWR_+/])/g, '');
-    // ANSI 이스케이프 시퀀스 제거
-    cleanText = cleanText.replace(/\u001b\[[0-9;]*m/g, '');
-    cleanText = cleanText.replace(/\x1b\[[0-9;]*m/g, '');
+    // ANSI 이스케이프 시퀀스 제거 (더 강력한 패턴)
+    // eslint-disable-next-line no-control-regex
+    cleanText = cleanText.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '');
+    // eslint-disable-next-line no-control-regex
+    cleanText = cleanText.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
     
     return cleanText.length;
   }
 
-  // 마크업을 유지하면서 표시 길이로 텍스트를 자르기
-  private truncateToVisibleLength(text: string, maxWidth: number): string {
-    let visibleCount = 0;
-    let result = '';
-    let i = 0;
-    
-    while (i < text.length && visibleCount < maxWidth) {
-      const char = text[i];
-      
-      // terminal-kit 마크업 시작
-      if (char === '^' && i + 1 < text.length) {
-        const nextChar = text[i + 1];
-        if (/[KgbyrmcRGBYCMWkwKGBYCMWR_+/]/.test(nextChar)) {
-          // 마크업은 결과에 포함하지만 카운트하지 않음
-          result += char + nextChar;
-          i += 2;
-          continue;
-        }
-      }
-      
-      // 일반 문자인 경우 카운트하고 추가
-      result += char;
-      visibleCount++;
-      i++;
-    }
-    
-    return result;
-  }
 
-  // 적절한 줄바꿈 지점을 찾기
+  // 적절한 줄바꿈 지점을 찾기 (너비 초과 방지)
   private findBreakPoint(text: string, maxWidth: number): number {
-    let visibleCount = 0;
+    // getVisibleLength를 사용하여 부분 문자열의 실제 길이를 정확히 측정
     let lastSpaceIndex = -1;
-    let inMarkup = false;
+    let lastSafeIndex = 0;
     
+    // 앞에서부터 maxWidth를 초과하지 않는 마지막 지점 찾기
     for (let i = 0; i < text.length; i++) {
-      const char = text[i];
+      const partialText = text.substring(0, i + 1);
+      const visibleLength = this.getVisibleLength(partialText);
       
-      // terminal-kit 마크업 시작
-      if (char === '^' && i + 1 < text.length) {
-        const nextChar = text[i + 1];
-        if (/[KgbyrmcRGBYCMWkwKGBYCMWR_+/]/.test(nextChar)) {
-          inMarkup = true;
-          i++; // 다음 문자도 건너뛰기
-          continue;
-        }
+      if (text[i] === ' ') {
+        lastSpaceIndex = i;
       }
       
-      // 마크업이 아닌 실제 문자인 경우만 카운트
-      if (!inMarkup) {
-        if (char === ' ') {
-          lastSpaceIndex = i;
+      if (visibleLength > maxWidth) {
+        // maxWidth를 초과하는 첫 번째 지점에서 중단
+        // 공백이 있고, 적절한 위치에 있으면 공백에서 자르기
+        const minSpacePosition = Math.max(5, Math.floor(maxWidth * 0.25));
+        if (lastSpaceIndex > 0 && lastSpaceIndex >= minSpacePosition) {
+          return lastSpaceIndex;
         }
-        visibleCount++;
-        
-        if (visibleCount >= maxWidth) {
-          // 적절한 공백 지점이 있으면 그곳에서 자르기
-          if (lastSpaceIndex > 0 && lastSpaceIndex > maxWidth * 0.7) {
-            return lastSpaceIndex;
-          }
-          return i;
-        }
+        // 공백이 없거나 너무 앞쪽이면 마지막 안전한 위치에서 자르기
+        return Math.max(1, lastSafeIndex);
       }
       
-      // 마크업 종료 체크 (단독 ^ 또는 다른 마크업 시작)
-      if (inMarkup && (char === '^' || i === text.length - 1)) {
-        inMarkup = false;
-      }
+      // 현재 위치가 maxWidth 이하이므로 안전한 위치로 기록
+      lastSafeIndex = i + 1;
     }
     
     return text.length;
@@ -1132,24 +1165,72 @@ export class ChatInterface {
             
             console.debug('Processing image with terminal-image, size:', content.length, 'terminal type:', process.env.TERM);
             
-            // iTerm2 감지
-            const isITerm2 = process.env.TERM_PROGRAM === 'iTerm.app';
+            // iTerm2 감지 및 디버깅 정보 (더 강력한 감지)
+            const isITerm2 = process.env.TERM_PROGRAM === 'iTerm.app' || 
+                           process.env.LC_TERMINAL === 'iTerm2' ||
+                           process.env.TERM_PROGRAM === 'iTerm2.app';
+            
+            if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+              console.log('🔍 Terminal Detection:');
+              console.log('  TERM_PROGRAM:', process.env.TERM_PROGRAM);
+              console.log('  TERM:', process.env.TERM);
+              console.log('  LC_TERMINAL:', process.env.LC_TERMINAL);
+              console.log('  isITerm2:', isITerm2);
+              console.log('  File size:', content.length, 'bytes');
+            }
             
             let imageString: string;
             
             if (isITerm2) {
-              // iTerm2용 직접 inline image protocol 구현
-              const base64Data = content.toString('base64');
-              const width = Math.min(this.width - 4, 80);
-              const height = Math.min(this.height - 10, 30);
+              // iTerm2용 안전한 inline image protocol 구현
+              const sidebarWidth = this.getSidebarWidth();
+              const maxWidth = Math.min(this.width - sidebarWidth - 8, 60); // 동적 사이드바 고려
+              const maxHeight = Math.min(this.height - 12, 25); // 입력창 고려
               
-              // iTerm2 inline image protocol: ESC]1337;File=inline=1:[base64data]^G
-              imageString = `\x1b]1337;File=inline=1;width=${width};height=${height}:${base64Data}\x07`;
+              // 파일 크기 체크 - iTerm2 안정성을 위해 더 엄격한 제한
+              const iTerm2SafeLimit = 2 * 1024 * 1024; // 2MB로 제한
+              
+              if (content.length > iTerm2SafeLimit) {
+                // 큰 파일은 terminal-image로 폴백
+                console.log(`📦 Large file (${content.length} bytes) detected, using terminal-image for stability`);
+                const imageOptions = { 
+                  width: maxWidth,
+                  height: maxHeight,
+                  preserveAspectRatio: true
+                };
+                imageString = await terminalImage.buffer(content, imageOptions);
+              } else {
+                // 작은 파일만 iTerm2 네이티브 프로토콜 사용
+                try {
+                  console.log(`🖼️ Using iTerm2 native protocol for ${content.length} bytes`);
+                  const base64Data = content.toString('base64');
+                  let iTerm2Options = '';
+                  
+                  if (content.length > 1024 * 1024) { // 1MB 이상이면 크기 제한
+                    iTerm2Options = `width=${maxWidth};height=${maxHeight};preserveAspectRatio=1;`;
+                  } else {
+                    iTerm2Options = `preserveAspectRatio=1;`;
+                  }
+                  
+                  // iTerm2 inline image protocol with safety measures
+                  imageString = `\x1b]1337;File=inline=1;${iTerm2Options}:${base64Data}\x07`;
+                  console.log(`✅ iTerm2 protocol string generated, length: ${imageString.length}`);
+                } catch (base64Error) {
+                  console.error('Base64 encoding failed, falling back to terminal-image:', base64Error);
+                  const imageOptions = { 
+                    width: maxWidth,
+                    height: maxHeight,
+                    preserveAspectRatio: true
+                  };
+                  imageString = await terminalImage.buffer(content, imageOptions);
+                }
+              }
             } else {
               // 다른 터미널에서는 terminal-image 사용
-              const imageOptions: any = { 
-                width: Math.min(this.width - 4, 80),
-                height: Math.min(this.height - 10, 30),
+              const sidebarWidth = this.getSidebarWidth();
+              const imageOptions = { 
+                width: Math.min(this.width - sidebarWidth - 8, 60), // 동적 사이드바 고려
+                height: Math.min(this.height - 12, 25), // 입력창 고려
                 preserveAspectRatio: true
               };
               
@@ -1319,7 +1400,9 @@ export class ChatInterface {
     const messageBoxHeight = this.height - inputBoxHeight - hintAreaHeight;
     
     // 메인 영역 너비 (사이드바 공간 제외)
-    const mainAreaWidth = this.width - this.SIDEBAR_WIDTH - 1; // -1은 구분자
+    const sidebarWidth = this.getSidebarWidth();
+    const separatorWidth = sidebarWidth > 0 ? 1 : 0; // 사이드바가 있을 때만 구분자 존재
+    const mainAreaWidth = this.width - sidebarWidth - separatorWidth;
 
     // 메시지 영역 테두리 (메인 영역만)
     this.term.brightBlack();
@@ -1339,28 +1422,30 @@ export class ChatInterface {
     }
     this.term.moveTo(1, messageBoxHeight)('└' + '─'.repeat(mainAreaWidth - 2) + '┘');
 
-    // 사이드바 그리기
-    this.drawSidebar(messageBoxHeight);
+    // 사이드바 그리기 (있는 경우에만)
+    if (sidebarWidth > 0) {
+      this.drawSidebar(messageBoxHeight, sidebarWidth);
+    }
 
     this.drawMessageArea(messageBoxHeight);
     this.drawInputArea();
   }
 
-  private drawSidebar(messageBoxHeight: number): void {
-    const sidebarX = this.width - this.SIDEBAR_WIDTH + 1;
+  private drawSidebar(messageBoxHeight: number, sidebarWidth: number): void {
+    const sidebarX = this.width - sidebarWidth + 1;
     
     // 사이드바 테두리
     this.term.brightBlack();
-    this.term.moveTo(sidebarX, 1)('┌' + '─'.repeat(this.SIDEBAR_WIDTH - 2) + '┐');
+    this.term.moveTo(sidebarX, 1)('┌' + '─'.repeat(sidebarWidth - 2) + '┐');
     
     // 사이드바 헤더 배경 지우기
     this.term.moveTo(sidebarX + 1, 1);
-    this.term(' '.repeat(this.SIDEBAR_WIDTH - 2));
+    this.term(' '.repeat(sidebarWidth - 2));
     
     // 사이드바 헤더
     const sidebarHeader = `👥 ${this.userCount} users`;
     this.term.moveTo(sidebarX + 1, 1);
-    this.term.green()(sidebarHeader.slice(0, this.SIDEBAR_WIDTH - 2));
+    this.term.green()(sidebarHeader.slice(0, sidebarWidth - 2));
     
     // 사이드바 세로 테두리와 사용자 목록
     const maxUsers = messageBoxHeight - 3; // 헤더와 하단 테두리 제외
@@ -1371,7 +1456,7 @@ export class ChatInterface {
       
       // 사이드바 내부 영역 지우기
       this.term.moveTo(sidebarX + 1, y);
-      this.term(' '.repeat(this.SIDEBAR_WIDTH - 2));
+      this.term(' '.repeat(sidebarWidth - 2));
       
       // 사용자 목록 표시
       const userIndex = y - 2;
@@ -1379,27 +1464,28 @@ export class ChatInterface {
         const user = this.userList[userIndex];
         const displayName = user === this.nickname ? `${user} (me)` : user;
         this.term.moveTo(sidebarX + 1, y);
-        this.term.white()(displayName.slice(0, this.SIDEBAR_WIDTH - 3));
+        this.term.white()(displayName.slice(0, sidebarWidth - 3));
       }
     }
     
     // 사이드바 하단 테두리
-    this.term.moveTo(sidebarX, messageBoxHeight)('└' + '─'.repeat(this.SIDEBAR_WIDTH - 2) + '┘');
+    this.term.moveTo(sidebarX, messageBoxHeight)('└' + '─'.repeat(sidebarWidth - 2) + '┘');
   }
 
   private drawMessageArea(messageBoxHeight: number): void {
 
     const messageAreaHeight = messageBoxHeight - 3; // 헤더 고려하여 -3
-    const mainAreaWidth = this.width - this.SIDEBAR_WIDTH - 1; // 사이드바 제외
-    const messageWidth = mainAreaWidth - 8; // 좌우 테두리(2) + 패딩(4) + 추가 여유(2) = 8
+    const sidebarWidth = this.getSidebarWidth();
+    const separatorWidth = sidebarWidth > 0 ? 1 : 0;
+    const mainAreaWidth = this.width - sidebarWidth - separatorWidth;
+    const messageWidth = this.getMessageWidth(); // 중앙화된 메서드 사용
     
     // 디버깅을 위한 로그 (개발 환경에서만)
     if (process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development') {
-      console.log(`💡 Width Debug: screen=${this.width}, sidebar=${this.SIDEBAR_WIDTH}, mainArea=${mainAreaWidth}, messageWidth=${messageWidth}`);
+      console.log(`💡 Width Debug: screen=${this.width}, sidebar=${sidebarWidth}, mainArea=${mainAreaWidth}, messageWidth=${messageWidth}`);
     }
     
     // 모든 메시지의 줄 수 계산 (이미지 줄 수 정확히 계산)
-    let totalLines = 0;
     const messageLines: string[][] = [];
     
     for (let i = 0; i < this.history.length; i++) {
@@ -1423,7 +1509,6 @@ export class ChatInterface {
       }
       
       messageLines.push(wrappedLines);
-      totalLines += wrappedLines.length;
     }
     
     // 스크롤 계산 - 스크롤 오프셋 적용 (헤더 아래부터 시작)
@@ -1491,12 +1576,8 @@ export class ChatInterface {
         if (currentY < messageBoxHeight) {
           this.term.moveTo(2, currentY);
           this.term.styleReset();
-          // 메시지가 사이드바 영역을 침범하지 않도록 제한
-          const maxDisplayWidth = mainAreaWidth - 4; // 좌우 패딩 고려
-          const displayLine = this.getVisibleLength(line) > maxDisplayWidth 
-            ? this.truncateToVisibleLength(line, maxDisplayWidth)
-            : line;
-          this.term(displayLine);
+          // wrapMessage에서 이미 올바른 너비로 줄바꿈되었으므로 그대로 출력
+          this.term(line);
           currentY++;
         } else {
           break;
@@ -1527,7 +1608,12 @@ export class ChatInterface {
     
     // 입력 힌트 및 상태 표시
     if (this.currentInput.length === 0) {
-      this.term.moveTo(2, inputY + 1)('Type a message... (\\ for new line, @filepath for files)');
+      const placeholderText = 'Type a message... (\\ for new line, @filepath for files)';
+      const availableWidth = Math.max(1, this.width - 4); // 좌우 여백 2자씩 제외
+      const truncatedText = placeholderText.length > availableWidth 
+        ? placeholderText.substring(0, availableWidth) 
+        : placeholderText;
+      this.term.moveTo(2, inputY + 1)(truncatedText);
       this.term.white();
     } else {
       inputLines.forEach((line, index) => {
@@ -1558,7 +1644,12 @@ export class ChatInterface {
       this.showCommandStatus(hintY + 1);
     } else {
       // 기본 힌트 표시
-      this.term.moveTo(2, hintY + 1)('💡 Tip: Use @ for files, / for commands, Ctrl+H for help');
+      const hintText = '💡 Tip: Use @ for files, / for commands, Ctrl+H for help';
+      const availableWidth = Math.max(1, this.width - 4); // 좌우 여백 2자씩 제외
+      const truncatedHint = hintText.length > availableWidth 
+        ? hintText.substring(0, availableWidth) 
+        : hintText;
+      this.term.moveTo(2, hintY + 1)(truncatedHint);
     }
 
     this.term.moveTo(cursorX, cursorY);
@@ -1630,7 +1721,12 @@ export class ChatInterface {
     
     // 입력 힌트 및 상태 표시
     if (this.currentInput.length === 0) {
-      this.term.moveTo(2, inputY + 1)('Type a message... (\\ for new line, @filepath for files)');
+      const placeholderText = 'Type a message... (\\ for new line, @filepath for files)';
+      const availableWidth = Math.max(1, this.width - 4); // 좌우 여백 2자씩 제외
+      const truncatedText = placeholderText.length > availableWidth 
+        ? placeholderText.substring(0, availableWidth) 
+        : placeholderText;
+      this.term.moveTo(2, inputY + 1)(truncatedText);
       this.term.white();
     } else {
       inputLines.forEach((line, index) => {
@@ -1649,7 +1745,12 @@ export class ChatInterface {
       this.showCommandStatus(hintY + 1);
     } else {
       // 기본 힌트 표시
-      this.term.moveTo(2, hintY + 1)('💡 Tip: Use @ for files, / for commands, Ctrl+H for help');
+      const hintText = '💡 Tip: Use @ for files, / for commands, Ctrl+H for help';
+      const availableWidth = Math.max(1, this.width - 4); // 좌우 여백 2자씩 제외
+      const truncatedHint = hintText.length > availableWidth 
+        ? hintText.substring(0, availableWidth) 
+        : hintText;
+      this.term.moveTo(2, hintY + 1)(truncatedHint);
     }
 
     this.term.moveTo(cursorX, cursorY);
@@ -1679,9 +1780,31 @@ export class ChatInterface {
     this.draw();
   }
 
+  // 화면 크기에 따른 동적 사이드바 너비 계산
+  private getSidebarWidth(): number {
+    // 작은 화면에서는 사이드바 숨김 또는 축소
+    if (this.width < 50) {
+      return 0; // 50자 미만에서는 사이드바 숨김
+    } else if (this.width < 90) {
+      return 15; // 50-90자에서는 축소된 사이드바
+    } else {
+      return this.SIDEBAR_WIDTH; // 90자 이상에서는 전체 사이드바
+    }
+  }
+
+  // 메시지 영역의 실제 너비를 계산하는 중앙화된 메서드
+  private getMessageWidth(): number {
+    const sidebarWidth = this.getSidebarWidth();
+    const separatorWidth = sidebarWidth > 0 ? 1 : 0; // 사이드바가 있을 때만 구분자 존재
+    const mainAreaWidth = this.width - sidebarWidth - separatorWidth;
+    
+    // 메시지 표시 영역의 실제 너비 (X=2부터 우측 여백 2자 제외)
+    return Math.max(10, mainAreaWidth - 4); // 최소 10자는 보장
+  }
+
   private getMaxScrollOffset(): number {
-    // 전체 메시지 줄 수 계산
-    const messageWidth = this.width - 4;
+    // 전체 메시지 줄 수 계산 - getMessageWidth() 사용
+    const messageWidth = this.getMessageWidth();
     let totalLines = 0;
     
     for (let i = 0; i < this.history.length; i++) {

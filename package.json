@@ -1,6 +1,6 @@
 {
   "name": "@tastekim/chat-cli",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "main": "dist/index.js",
   "bin": {
     "chat-cli": "dist/index.js"
