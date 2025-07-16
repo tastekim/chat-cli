@@ -117,7 +117,7 @@ Create a `.chat-cli` directory in your home folder for persistent settings:
 
 ## 🔧 Requirements | 요구사항
 
-- **Node.js** 18.0.0 or higher | 18.0.0 이상
+- **Node.js** 22.14.0 or higher | 22.14.0 이상
 - **Terminal** with color support | 컬러 지원 터미널
 - **Network connection** for real-time features | 실시간 기능을 위한 네트워크 연결
 
