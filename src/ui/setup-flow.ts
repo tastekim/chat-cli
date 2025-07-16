@@ -171,11 +171,13 @@ export class SetupFlow {
       
       console.log(chalk.cyan(titleContent));
       console.log(chalk.gray('🌟 A terminal-based chat application for developers worldwide'));
+      console.log(chalk.yellow('⚠️  Requires Node.js 22.14.0 or higher'));
       console.log();
     } catch (error) {
       // 오류 발생 시 간단한 제목으로 fallback
       console.log(chalk.cyan.bold('🚀 CHAT CLI'));
       console.log(chalk.gray('🌟 A terminal-based chat application for developers worldwide'));
+      console.log(chalk.yellow('⚠️  Requires Node.js 22.14.0 or higher'));
       console.log();
     }
   }
