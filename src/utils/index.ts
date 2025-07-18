@@ -1,1 +1,1 @@
-export * from './version-checker';
+export * from './version-checker.js';

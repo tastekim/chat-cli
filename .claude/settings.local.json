@@ -4,7 +4,17 @@
       "Bash(npm run build:*)",
       "Bash(go build:*)",
       "Bash(ls:*)",
-      "Bash(GOOS=linux GOARCH=amd64 go build -o bin/chat-server-linux-amd64 ./cmd/server)"
+      "Bash(GOOS=linux GOARCH=amd64 go build -o bin/chat-server-linux-amd64 ./cmd/server)",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(npm run dev:*)",
+      "Bash(npm install:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(rm:*)",
+      "Bash(find:*)",
+      "Bash(node:*)",
+      "Bash(npx tsx:*)",
+      "Bash(mv:*)",
+      "Bash(tput:*)"
     ],
     "deny": []
   }

@@ -89,10 +89,10 @@ export class VersionChecker {
     return 0;
   }
 
-  static displayUpdateMessage(versionInfo: VersionInfo, packageName: string): void {
+  static displayForceUpdateMessage(versionInfo: VersionInfo, packageName: string): void {
     if (!versionInfo.needsUpdate) return;
 
-    const boxWidth = 49;
+    const boxWidth = 55;
     const currentVersionText = ` Current version: ${versionInfo.current}`;
     const latestVersionText = ` Latest version:  ${versionInfo.latest}`;
     const updateCommandText = ` npm install -g ${packageName}@latest`;
@@ -103,25 +103,57 @@ export class VersionChecker {
     const commandPadding = ' '.repeat(boxWidth - updateCommandText.length);
 
     console.log();
-    console.log(chalk.yellow('┌─────────────────────────────────────────────────┐'));
-    console.log(chalk.yellow('│') + chalk.bold.white('           Update Available!                     ') + chalk.yellow('│'));
-    console.log(chalk.yellow('├─────────────────────────────────────────────────┤'));
-    console.log(chalk.yellow('│') + ` Current version: ${chalk.red(versionInfo.current)}${currentPadding}` + chalk.yellow('│'));
-    console.log(chalk.yellow('│') + ` Latest version:  ${chalk.green(versionInfo.latest)}${latestPadding}` + chalk.yellow('│'));
-    console.log(chalk.yellow('├─────────────────────────────────────────────────┤'));
-    console.log(chalk.yellow('│') + chalk.white(' Run the following command to update:            ') + chalk.yellow('│'));
-    console.log(chalk.yellow('│') + chalk.cyan(updateCommandText) + commandPadding + chalk.yellow('│'));
-    console.log(chalk.yellow('└─────────────────────────────────────────────────┘'));
+    console.log(chalk.red('┌───────────────────────────────────────────────────────┐'));
+    console.log(chalk.red('│') + chalk.bold.white('              UPDATE REQUIRED!                         ') + chalk.red('│'));
+    console.log(chalk.red('├───────────────────────────────────────────────────────┤'));
+    console.log(chalk.red('│') + chalk.white(' Your version is outdated and incompatible.           ') + chalk.red('│'));
+    console.log(chalk.red('│') + chalk.white(' Please update to the latest version to continue.     ') + chalk.red('│'));
+    console.log(chalk.red('├───────────────────────────────────────────────────────┤'));
+    console.log(chalk.red('│') + ` Current version: ${chalk.red.bold(versionInfo.current)}${currentPadding}` + chalk.red('│'));
+    console.log(chalk.red('│') + ` Latest version:  ${chalk.green.bold(versionInfo.latest)}${latestPadding}` + chalk.red('│'));
+    console.log(chalk.red('├───────────────────────────────────────────────────────┤'));
+    console.log(chalk.red('│') + chalk.white(' Run this command to update:                          ') + chalk.red('│'));
+    console.log(chalk.red('│') + chalk.cyan.bold(updateCommandText) + commandPadding + chalk.red('│'));
+    console.log(chalk.red('├───────────────────────────────────────────────────────┤'));
+    console.log(chalk.red('│') + chalk.yellow.bold(' Application will exit in 5 seconds...                ') + chalk.red('│'));
+    console.log(chalk.red('└───────────────────────────────────────────────────────┘'));
     console.log();
   }
 
+  static async checkAndForceUpdate(packageName: string, currentVersion: string): Promise<void> {
+    try {
+      const checker = new VersionChecker(packageName, currentVersion);
+      const versionInfo = await checker.checkLatestVersion();
+      
+      if (versionInfo.needsUpdate) {
+        VersionChecker.displayForceUpdateMessage(versionInfo, packageName);
+        
+        // 5초 카운트다운
+        for (let i = 5; i > 0; i--) {
+          process.stdout.write(`\r${chalk.red('⚠️  Exiting in')} ${chalk.bold.yellow(i)} ${chalk.red('seconds...')}`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        console.log(`\r${chalk.red('❌ Application terminated. Please update and try again.')}`);
+        process.exit(1);
+      }
+    } catch (error) {
+      // 네트워크 오류 등으로 버전 체크 실패 시 경고만 표시하고 계속 진행
+      if (process.env.DEBUG === 'true') {
+        console.warn(chalk.yellow('⚠️  Could not check for updates. Continuing...'));
+        console.error('Version check failed:', error);
+      }
+    }
+  }
+
+  // 기존 함수는 호환성을 위해 유지 (옵션 명령어에서 사용)
   static async checkAndNotify(packageName: string, currentVersion: string): Promise<void> {
     try {
       const checker = new VersionChecker(packageName, currentVersion);
       const versionInfo = await checker.checkLatestVersion();
       
       if (versionInfo.needsUpdate) {
-        VersionChecker.displayUpdateMessage(versionInfo, packageName);
+        VersionChecker.displayForceUpdateMessage(versionInfo, packageName);
       }
     } catch (error) {
       // 버전 체크 실패는 조용히 무시 (사용자 경험 방해하지 않음)

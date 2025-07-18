@@ -1,13 +1,14 @@
 {
   "name": "@tastekim/chat-cli",
-  "version": "1.4.8",
+  "version": "2.0.0",
+  "type": "module",
   "main": "dist/index.js",
   "bin": {
     "chat-cli": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
-    "dev": "ts-node src/index.ts",
+    "dev": "tsx src/index.ts",
     "dev:debug": "DEBUG=true NODE_ENV=development ts-node src/index.ts",
     "start": "node dist/index.js",
     "start:debug": "DEBUG=true NODE_ENV=development node dist/index.js",
@@ -18,7 +19,13 @@
     "build:linux": "npm run build && npm run package:linux",
     "package:linux": "mkdir -p deployment && cp -r dist package.json package-lock.json deployment/ && tar -czf chat-cli-linux.tar.gz -C deployment ."
   },
-  "keywords": ["chat", "cli", "terminal", "websocket", "real-time"],
+  "keywords": [
+    "chat",
+    "cli",
+    "terminal",
+    "websocket",
+    "real-time"
+  ],
   "author": {
     "name": "tastekim",
     "email": "dev.tastekim@gmail.com",
@@ -38,25 +45,31 @@
     "node": ">=22.14.0"
   },
   "dependencies": {
-    "blessed": "^0.1.81",
+    "@types/react": "^19.1.8",
     "chalk": "^5.4.1",
     "commander": "^14.0.0",
+    "glob": "^11.0.3",
     "highlight.js": "^11.11.1",
+    "ink": "^6.0.1",
+    "ink-big-text": "^2.0.0",
+    "ink-gradient": "^3.0.0",
+    "ink-markdown": "^1.0.4",
+    "ink-text-input": "^6.0.0",
     "inquirer": "^12.7.0",
     "jimp": "^1.6.0",
     "marked": "^16.0.0",
     "open": "^10.1.2",
+    "react": "^19.1.0",
     "terminal-image": "^3.1.1",
     "terminal-kit": "^3.1.1",
     "ws": "^8.18.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.1",
-    "@types/blessed": "^0.1.25",
     "@types/inquirer": "^9.0.8",
     "@types/jest": "^30.0.0",
     "@types/marked": "^5.0.2",
-    "@types/node": "^24.0.13",
+    "@types/node": "^24.0.14",
     "@types/terminal-kit": "^2.5.6",
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.36.0",
@@ -66,6 +79,7 @@
     "jest": "^30.0.4",
     "prettier": "^3.6.2",
     "ts-node": "^10.9.2",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.36.0"
   }

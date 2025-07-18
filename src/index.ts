@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { SetupFlow } from './ui/setup-flow';
-import { ChatInterface } from './ui/chat-interface';
-import { VersionChecker } from './utils/version-checker';
+import { SetupFlow } from './ui/setup-flow.js';
+import { startInkChatInterface } from './ui/ink-chat-interface.js';
+import { VersionChecker } from './utils/version-checker.js';
 import chalk from 'chalk';
+import { createRequire } from 'module';
 
-const program = new Command();
+const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
+const program = new Command();
 
 program
   .name('chat-cli')
@@ -21,16 +23,20 @@ program
     try {
       console.log(chalk.green('🚀 Starting Chat CLI...'));
       
-      // 백그라운드에서 버전 체크 (비동기, 논블로킹)
-      VersionChecker.checkAndNotify(packageJson.name, packageJson.version).catch(() => {
-        // 버전 체크 실패는 조용히 무시
-      });
+      // 버전 체크 및 강제 업데이트 (동기적으로 처리)
+      await VersionChecker.checkAndForceUpdate(packageJson.name, packageJson.version);
       
       const setupFlow = new SetupFlow();
       const { nickname, room, location } = await setupFlow.start();
       
-      const chatInterface = new ChatInterface(nickname, room, location);
-      await chatInterface.start();
+      // Clear screen and prepare for ink interface
+      console.clear();
+      
+      // Small delay to ensure terminal state is clean
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Use ink interface
+      startInkChatInterface(nickname, room, location);
     } catch (error) {
       if (error instanceof Error && error.message.includes('User force closed')) {
         console.log(chalk.yellow('👋 Exiting chat. See you next time!'));
@@ -59,7 +65,8 @@ program
       const versionInfo = await checker.checkLatestVersion();
       
       if (versionInfo.needsUpdate) {
-        VersionChecker.displayUpdateMessage(versionInfo, packageJson.name);
+        VersionChecker.displayForceUpdateMessage(versionInfo, packageJson.name);
+        console.log(chalk.red('🚨 Please update to the latest version to continue using Chat CLI.'));
       } else {
         console.log(chalk.green('✅ You are using the latest version!'));
         console.log(chalk.gray(`   Current version: ${versionInfo.current}`));
