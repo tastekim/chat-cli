@@ -52,6 +52,7 @@ interface Props {
 }
 
 interface Message {
+  id: string;
   type: 'user' | 'own' | 'system' | 'error';
   content: string;
   sender?: string;
@@ -323,14 +324,17 @@ const UserList: React.FC<{
 // Chat panel component
 const ChatPanel: React.FC<{ 
   terminalWidth: number;
+  panelHeight: number;
   currentRoomId: string;
   messages: Message[];
   isTyping: boolean;
   currentInput: string;
   nickname: string;
-}> = ({ terminalWidth, currentRoomId, messages, isTyping, currentInput, nickname }) => {
+}> = ({ terminalWidth, panelHeight, currentRoomId, messages, isTyping, currentInput, nickname }) => {
   const layout = getDynamicLayout(terminalWidth);
-  
+  const messageAreaHeight = panelHeight / 3.5;
+  const maxMessages = Math.max(1, messageAreaHeight);
+
   return (
     <Box flexDirection="column" width={`${layout.chat}%`} borderStyle="round" borderColor="cyan" minWidth="40" height="100%">
       {/* Chat Header */}
@@ -342,13 +346,13 @@ const ChatPanel: React.FC<{
       
       {/* Messages Container - Expandable, leaving space for typing indicator */}
       <Box flexDirection="column" flexGrow={1} paddingX={1} overflow="hidden">
-        {messages.slice(-10).map((message, index) => {
+        {messages.slice(-maxMessages).map((message, index) => {
           if (message.type === 'system' || message.type === 'error') {
             return <SystemMessage key={index} message={message} />;
           }
           return (
             <MessageBubble 
-              key={index} 
+              key={message.id} 
               message={message} 
               isOwn={message.type === 'own'} 
               terminalWidth={terminalWidth}
@@ -450,14 +454,13 @@ const ChatInterface: React.FC<Props> = ({ nickname, room, location }) => {
 
   // Add message to specific room (or current viewing room if no room specified)
   const addMessageToRoom = useCallback((roomId: string, type: Message['type'], content: string, sender?: string) => {
-    const newMessage: Message = { type, content, sender };
+    const newMessage: Message = { id: `${Date.now()}-${Math.random()}`, type, content, sender };
     
     // Store in all room messages
     setAllRoomMessages(prev => {
       const roomMessages = prev[roomId] || [];
       
       // Check for duplicate messages (same content, same sender, within 1 second)
-      const now = Date.now();
       const isDuplicate = roomMessages.some(msg => 
         msg.content === content && 
         msg.sender === sender && 
@@ -516,7 +519,6 @@ const ChatInterface: React.FC<Props> = ({ nickname, room, location }) => {
         setCurrentViewingRoom(room);
         const initialRoom = { name: room, isPrivate: false, userCount: 1 };
         setJoinedRooms([initialRoom]);
-        console.log(`Initial room set: ${room}`, [initialRoom]);
         // Add self to user list
         setCurrentRoomUsers([nickname]);
         addMessage('system', `Connected! Welcome to ${room}.`);
@@ -555,7 +557,6 @@ const ChatInterface: React.FC<Props> = ({ nickname, room, location }) => {
                 addMessage('system', `Unknown message type: ${message.type}`);
             }
           } catch (err) {
-            console.error('Failed to parse message:', err, 'Raw data:', data);
             addMessage('error', `Failed to parse message: ${err instanceof Error ? err.message : 'Unknown error'}`);
           }
         });
@@ -603,12 +604,10 @@ const ChatInterface: React.FC<Props> = ({ nickname, room, location }) => {
         if (!roomExists) {
           const roomToAdd = availableRooms.find(r => r.name === roomId);
           if (roomToAdd) {
-            console.log(`Adding room to joined list: ${roomId}`, [...prev, roomToAdd]);
             return [...prev, roomToAdd];
           } else {
             // Create a basic room info if not found in available rooms
             const newRoom = { name: roomId, isPrivate: false, userCount: 1 };
-            console.log(`Creating and adding new room: ${roomId}`, [...prev, newRoom]);
             return [...prev, newRoom];
           }
         }
@@ -640,7 +639,6 @@ const ChatInterface: React.FC<Props> = ({ nickname, room, location }) => {
   }, []);
 
   const handleRoomCreated = useCallback((payload: any) => {
-    console.log('Room created:', payload);
     setAvailableRooms(prev => {
       if (!prev.some(r => r.name === payload.name)) {
         addMessage('system', `🏠 New room '${payload.name}' has been created!`);
@@ -704,7 +702,6 @@ const ChatInterface: React.FC<Props> = ({ nickname, room, location }) => {
     if (targetRoom) {
       setJoinedRooms(prev => {
         if (!prev.some(r => r.name === targetRoom.name)) {
-          console.log(`Adding room to joined list: ${roomName}`, [...prev, targetRoom]);
           return [...prev, targetRoom];
         }
         return prev;
@@ -950,7 +947,6 @@ const ChatInterface: React.FC<Props> = ({ nickname, room, location }) => {
                 // Always ensure Lobby is in the joined rooms
                 filtered.unshift({ name: 'Lobby', isPrivate: false, userCount: 1 });
               }
-              console.log(`After leaving ${roomToLeave}, joined rooms:`, filtered.map(r => r.name));
               return filtered;
             });
             // Switch to Lobby view
@@ -1041,8 +1037,6 @@ const ChatInterface: React.FC<Props> = ({ nickname, room, location }) => {
         // Double-check that we're actually joined to this room
         const isJoinedToCurrentRoom = joinedRooms.some(r => r.name === currentViewingRoom);
         if (!isJoinedToCurrentRoom) {
-          console.log(`Current viewing room: ${currentViewingRoom}`);
-          console.log(`Joined rooms:`, joinedRooms.map(r => r.name));
           addMessage('error', `You are not joined to room '${currentViewingRoom}'. Use /join to join a room first.`);
           setCurrentInput('');
           setIsTyping(false);
@@ -1064,7 +1058,6 @@ const ChatInterface: React.FC<Props> = ({ nickname, room, location }) => {
         } else {
           // Optimistic update: immediately show the message in the UI
           addMessageToRoom(currentViewingRoom, 'own', trimmedValue, nickname);
-          console.log(`Message sent to room: ${currentViewingRoom}`);
         }
       }
     }
@@ -1111,7 +1104,6 @@ const ChatInterface: React.FC<Props> = ({ nickname, room, location }) => {
           addMessage('system', 'Room will be public.');
           // Create the room immediately
           const roomData = { name: pendingRoomData.name!, isPrivate: false, password: '' };
-          console.log('Creating public room:', roomData); // Debug log
           createRoom(roomData);
         }
         break;
@@ -1123,7 +1115,6 @@ const ChatInterface: React.FC<Props> = ({ nickname, room, location }) => {
         }
         // Create the room with password
         const roomData = { name: pendingRoomData.name!, isPrivate: true, password: input };
-        console.log('Creating private room:', roomData); // Debug log
         createRoom(roomData);
         break;
     }
@@ -1274,6 +1265,7 @@ const ChatInterface: React.FC<Props> = ({ nickname, room, location }) => {
         {/* Chat Panel - Responsive */}
         <ChatPanel 
           terminalWidth={terminalWidth}
+          panelHeight={availableHeight}
           currentRoomId={currentViewingRoom}
           messages={messages}
           isTyping={isTyping}

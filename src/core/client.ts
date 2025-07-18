@@ -102,10 +102,10 @@ export class WebSocketClient extends EventEmitter {
   }
 
   public sendWebSocketMessage(message: object): boolean {
-    console.log('sendWebSocketMessage called with:', message);
-    console.log('Connection state - isConnected:', this.isConnected);
-    console.log('WebSocket readyState:', this.ws?.readyState);
-    console.log('WebSocket.OPEN constant:', WebSocket.OPEN);
+    // console.log('sendWebSocketMessage called with:', message);
+    // console.log('Connection state - isConnected:', this.isConnected);
+    // console.log('WebSocket readyState:', this.ws?.readyState);
+    // console.log('WebSocket.OPEN constant:', WebSocket.OPEN);
     
     if (!this.isConnectionOpen()) {
       console.error('Connection not open - cannot send message');
@@ -114,9 +114,9 @@ export class WebSocketClient extends EventEmitter {
     }
     try {
       const jsonMessage = JSON.stringify(message);
-      console.log('Sending JSON message:', jsonMessage);
+      // console.log('Sending JSON message:', jsonMessage);
       this.ws?.send(jsonMessage);
-      console.log('Message sent successfully');
+      // console.log('Message sent successfully');
       return true;
     } catch (error) {
       console.error('Error sending message:', error);
